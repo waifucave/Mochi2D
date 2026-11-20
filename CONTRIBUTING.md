@@ -38,6 +38,10 @@ variants of `test/support/crafted.ts`.
   `npm run golden`, and in the pull request which results or pixels
   changed and why. `docs/versioning.md` says what a change in results or
   renders has to be.
+- **The viewer's look:** the README's screenshot and the sample model's
+  reference render, regenerated with
+  `MOCHI2D_UPDATE_IMAGES=1 npx vitest run test/readme-screenshot.test.ts test/sample-mochi.test.ts`
+  after `npm run build`.
 - **`CHANGELOG.md`:** an entry under the next version.
 
 `test/public-text.test.ts` keeps the public files free of references to

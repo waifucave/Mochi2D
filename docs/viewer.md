@@ -63,8 +63,10 @@ Escape or a click elsewhere closes a menu.
 - **File › Load URL** opens the URL of a `*.model3.json` file or of a
   `.zip`. The server must allow the request (same origin, or CORS).
 - **File › Models…** lists the models in `models/index.json` next to the
-  page: the development servers list `assets/models/`, and a static build
-  lists the folders copied into it.
+  page: the development servers list `assets/models/` and the sample model
+  in `samples/`, and a static build lists the folders copied into it.
+- With no model open, the stage offers the sample model «Mochi»
+  (`samples/mochi/`) in one click, when the Models list has it.
 - **File › Open recent** lists the last models opened by URL or from the
   Models list. A folder or zip opened from your disk can't be reopened by
   the page, so it isn't listed.
@@ -72,7 +74,7 @@ Escape or a click elsewhere closes a menu.
   `.moc3` files compares them. Dropping motion, expression or WAV files adds
   them to the open model, as **File › Add files…** does.
 - `?model=<path or URL>` opens a model when the page loads: a path from the
-  Models list (`?model=DeepSeek/大肥鱼.model3.json`) or a URL.
+  Models list (`?model=samples/mochi/mochi.model3.json`) or a URL.
 
 ## Resources
 

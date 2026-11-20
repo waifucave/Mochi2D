@@ -73,6 +73,7 @@ export interface Page {
   waitForSelector(selector: string, opts?: { timeout?: number }): Promise<unknown>;
   selectOption(selector: string, value: string): Promise<unknown>;
   waitForTimeout(ms: number): Promise<void>;
+  screenshot(opts?: { type?: "png"; fullPage?: boolean }): Promise<Uint8Array>;
   locator(selector: string): {
     count(): Promise<number>;
     boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null>;

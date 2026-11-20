@@ -6,6 +6,10 @@ Mochi2D reads the model files that Live2D Cubism exports: `.moc3` with
 `model3.json`, motions, expressions, physics, pose and the rest. It is a
 from-scratch TypeScript runtime and WebGL renderer.
 
+![The Mochi2D viewer with the sample model «Mochi» open](docs/images/viewer-mochi.png)
+
+_The viewer with the sample model «Mochi» (`samples/mochi/`), its parameters and its files._
+
 **How it was made.** Most of this code was written by AI coding agents
 (Anthropic's Claude) under the direction of the project's maintainer,
 through the clean-room process in [CLEANROOM.md](CLEANROOM.md). Copyright
@@ -22,9 +26,10 @@ its builds is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Status
 
-**0.19.0 is a 1.0 candidate:** the API is marked stable or experimental
-export by export ([docs/api-stability.md](docs/api-stability.md)), and
-[docs/versioning.md](docs/versioning.md) says what each release may change.
+Every export of the API is marked stable or experimental
+([docs/api-stability.md](docs/api-stability.md)), and
+[docs/versioning.md](docs/versioning.md) says what each release may change;
+[CHANGELOG.md](CHANGELOG.md) lists the releases.
 Coming from an earlier 0.x, see [docs/migration.md](docs/migration.md).
 In the project's own tests on its conformance catalog, Mochi2D's evaluation
 results are bit-identical with those of Live2D's Cubism SDK runtime ("the
@@ -86,8 +91,11 @@ npm ci
 npm run dev
 ```
 
-Then open http://localhost:5173/. Models in `assets/models/` (for example
-DeepSeek-chan, see [Test models](#test-models)) appear in **File › Models…**.
+Then open http://localhost:5173/. With no model open, the viewer offers the
+sample model «Mochi» (`samples/mochi/`, MIT) in one click; it is also in
+**File › Models…**, and http://localhost:5173/?model=samples/mochi/mochi.model3.json
+opens it directly. Models in `assets/models/` (for example DeepSeek-chan, see
+[Test models](#test-models)) appear in **File › Models…** too.
 Open any other model with **File › Open folder…**, **Open zip…** or a URL,
 or drop it on the page. On a phone, serve the viewer to your network
 (`npm run build && npm run viewer -- --host 0.0.0.0`), or build a static copy
@@ -335,6 +343,7 @@ sources, audio, PNG encoding), `src/viewer` and `src/harness` (pages in
 - `docs/`: [API](docs/api.md), [API stability](docs/api-stability.md), [versioning](docs/versioning.md), [migration from 0.x](docs/migration.md), [model data](docs/moc-data.md), [agent API](docs/agent-api.md), [viewer guide](docs/viewer.md), [architecture](docs/architecture.md), [rendering rules](docs/rendering.md), [resultdiff](docs/resultdiff.md)
 - `CHANGELOG.md`: releases and the versioning policy
 - `llms.txt`: a summary of Mochi2D for language models
+- `samples/`: the sample model «Mochi» ([samples/README.md](samples/README.md))
 - `examples/`: embedding a model in a page, headless evaluation in Node
 - `scripts/`: build tooling
 

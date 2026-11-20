@@ -14,17 +14,23 @@ const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: { seconds: { type: "string", default: "3" }, out: { type: "string" } },
 });
-// By default DeepSeek-chan, from assets/models/DeepSeek/ (see the README for where to get it).
-const DEFAULT = ["assets/models/DeepSeek/大肥鱼.model3.json", "DeepSeek/大肥鱼.model3.json"];
-const path = positionals[0] ?? DEFAULT.find((p) => existsSync(p));
+// By default DeepSeek-chan, from assets/models/DeepSeek/ (see the README for where to get it),
+// else the sample model «Mochi» in samples/mochi/; each with one of its motions.
+const DEFAULT = [
+  ["assets/models/DeepSeek/大肥鱼.model3.json", "Animation/脱捕.motion3.json"],
+  ["DeepSeek/大肥鱼.model3.json", "Animation/脱捕.motion3.json"],
+  ["samples/mochi/mochi.model3.json", "motions/idle.motion3.json"],
+];
+const fallback = DEFAULT.find(([p]) => existsSync(p));
+const path = positionals[0] ?? fallback?.[0];
 if (!path) {
   console.error(
-    "Give a model (a *.model3.json, a folder or a zip), or put DeepSeek-chan in " +
-      "assets/models/DeepSeek/ (see the README).",
+    "Give a model (a *.model3.json, a folder or a zip), or run this from the repository's " +
+      "folder, which has the sample model in samples/mochi/.",
   );
   process.exit(1);
 }
-const motion = positionals[1] ?? (positionals[0] ? undefined : "Animation/脱捕.motion3.json");
+const motion = positionals[1] ?? (positionals[0] ? undefined : fallback[1]);
 
 const model = await loadModelFromDisk(path, {
   // A fixed random sequence makes eye blinks (and idle motion choices) repeatable.

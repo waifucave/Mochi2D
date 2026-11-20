@@ -62,7 +62,9 @@ describe("the agent docs", () => {
     const files = [
       "README.md",
       "llms.txt",
-      ...readdirSync(join(root, "docs")).map((f) => join("docs", f)),
+      ...readdirSync(join(root, "docs"))
+        .filter((f) => f.endsWith(".md"))
+        .map((f) => join("docs", f)),
     ];
     for (const f of files)
       expect(readFileSync(join(root, f), "utf8"), f).not.toMatch(/cleanroom\/(inbox|reports)/);

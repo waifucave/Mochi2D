@@ -115,6 +115,22 @@ describe.skipIf(!built)("the built package", () => {
     120000,
   );
 
+  it("runs the Node example on the sample model", () => {
+    const out = execFileSync(
+      process.execPath,
+      [
+        join(root, "examples", "node", "evaluate.mjs"),
+        "samples/mochi/mochi.model3.json",
+        "motions/idle.motion3.json",
+        "--seconds",
+        "1",
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    expect(out).toMatch(/5 parameters, 7 drawables, physics on/);
+    expect(out).toMatch(/motion motions\/idle\.motion3\.json: started/);
+  }, 60000);
+
   it.skipIf(!HAVE_DEEPSEEK)(
     "runs the Node example",
     () => {
@@ -315,5 +331,9 @@ describe.skipIf(!toolsBuilt)("the built tools", () => {
       expect.arrayContaining([...Object.values(pkg.bin), "dist/web/harness.html", "LICENSE"]),
     );
     expect(paths.filter((p) => p.startsWith("dist/tools/"))).toEqual(Object.values(pkg.bin).sort());
+    // The sample model and the README's images stay in the repository.
+    expect(paths.filter((p) => p.startsWith("samples/") || p.startsWith("docs/images/"))).toEqual(
+      [],
+    );
   }, 60000);
 });

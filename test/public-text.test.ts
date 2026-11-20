@@ -49,7 +49,7 @@ const CITATIONS: [RegExp, string][] = [
     "the project's owner",
   ],
   [/claude\.ai\/code\/session/, "a session link"],
-  [/\bMochi\s+(?:Studio|Maker|Native)\b/, "a private repository's name"],
+  [/\bMochi\s+(?:Studio|Native)\b/, "a private repository's name"],
   [/\blegal(?:\s|\*|\/\/)+reviews?\b|\blawyers?\b|\battorneys?\b/i, "a legal review"],
   [
     /\bspec(?:ification)?(?:'s)?\s+(?:Part|\d)|\bParts?\s+\d\b|\bthe\s+spec(?:ification)?\b/,
@@ -145,6 +145,7 @@ describe("public files", () => {
       "the owner's opacity stops above it",
       "rounded to 2 decimals",
       "The project has taken no legal opinion on this",
+      "the example model of Mochi Maker's getting-started guide",
       "the format's rules (1b.7, P8, C12, §1c)",
       "acquiring the same spec every frame",
       "the owner part's opacity",

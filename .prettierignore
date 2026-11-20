@@ -8,3 +8,5 @@ package-lock.json
 *.txt
 cleanroom
 *.md
+# Copied unchanged from the sample model's source
+samples/mochi

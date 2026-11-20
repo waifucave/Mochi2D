@@ -12,11 +12,12 @@ import { join, resolve, sep } from "node:path";
 
 /**
  * Model folders at the repository root whose terms allow them there. They
- * are listed in the viewer's sample menu when a checkout still has them;
- * DeepSeek-chan's home is `assets/models/DeepSeek/`. Add a folder here only
- * for a model whose license allows it in the repository.
+ * are listed in the viewer's Models menu when a checkout has them:
+ * `samples/` (the sample model «Mochi», MIT) and, in older checkouts,
+ * `DeepSeek/` (its home is now `assets/models/DeepSeek/`). Add a folder here
+ * only for a model whose license allows it in the repository.
  */
-export const VETTED_REPO_MODEL_FOLDERS: readonly string[] = ["DeepSeek"];
+export const VETTED_REPO_MODEL_FOLDERS: readonly string[] = ["samples", "DeepSeek"];
 
 /** DeepSeek-chan's folder name in model paths (`DeepSeek/大肥鱼.model3.json`). */
 export const DEEPSEEK_FOLDER = "DeepSeek";

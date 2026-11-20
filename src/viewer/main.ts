@@ -51,6 +51,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const canvas = $<HTMLCanvasElement>("canvas");
 const stageEl = $<HTMLElement>("stage");
 const statusEl = $<HTMLElement>("status");
+const sampleOffer = $<HTMLElement>("sample-offer");
 const noticeEl = $<HTMLElement>("stage-notice");
 const maskSizeEl = $<HTMLSelectElement>("mask-size");
 maskSizeEl.value = DEFAULT_MASK_SETTING;
@@ -749,6 +750,7 @@ async function openSource(base: FileSource, entry?: string): Promise<void> {
   const files = [...(source.list() ?? (entry ? [entry] : []))];
   const settings = files.filter((p) => classifyModelFile(p) === "settings");
   const active = entry ?? settings[0];
+  sampleOffer.hidden = true;
   current = {
     source,
     files,
@@ -1156,6 +1158,16 @@ modelSelect.addEventListener("change", () => {
 
 // ?model=<path in models/index.json, or a URL of a *.model3.json or .zip> opens a model at start.
 const requested = new URLSearchParams(location.search).get("model");
+
+// With no model open, the sample model «Mochi» (samples/mochi/ in the
+// repository, or mochi/ in a static build that includes it) is one click away.
+const sampleButton = $<HTMLButtonElement>("open-sample");
+void modelIndexReady.then(() => {
+  const sample = modelIndex.find((f) => /(^|\/)mochi\/mochi\.model3\.json$/.test(f));
+  if (!sample || requested || current) return;
+  sampleOffer.hidden = false;
+  sampleButton.onclick = () => void openListedModel(sample);
+});
 if (requested)
   void modelIndexReady.then(() => {
     if (modelIndex.includes(requested)) {
