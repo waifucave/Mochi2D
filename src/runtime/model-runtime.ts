@@ -49,7 +49,8 @@ import {
 } from "../anim/lip-sync.js";
 import { displayLabels, vertexBounds, type Bounds } from "../anim/model-data.js";
 import type { PhysicsState } from "../anim/physics.js";
-import { loadModelBundle, type ModelBundle } from "./bundle.js";
+import { loadModelBundle, resolveSettingsPath, type ModelBundle } from "./bundle.js";
+import { mocInputBytes, sourceWithMoc, sourceWithMocAt, type MocInput } from "./moc-input.js";
 import { findMotionSyncSetting, type MotionSyncSetting } from "../anim/motion-sync/file.js";
 import type {
   MotionSyncClock,
@@ -160,6 +161,30 @@ export interface MappedPoints {
 
 /** The components of the frame procedure that can be switched on and off (3w.1). */
 export type EffectName = keyof EffectSwitches;
+
+/**
+ * Options of {@link ModelRuntime.load}: the runtime's options, and the
+ * model's data in place of its `.moc3` file.
+ */
+export interface RuntimeLoadOptions extends RuntimeOptions {
+  /**
+   * The model as `.moc3` bytes or as `{ data, version }` (written with
+   * `writeMoc`), in place of the settings' `.moc3` file, which then need not
+   * exist in the source (experimental). The settings and every other file
+   * still come from the source. Data `writeMoc` refuses rejects with its
+   * `MocWriteError`.
+   */
+  moc?: MocInput;
+}
+
+/**
+ * Where a runtime's model data comes from: "file", the settings' `.moc3` in
+ * its source; "data", bytes or model data given to {@link ModelRuntime.load}
+ * or {@link ModelRuntime.withData}, which its {@link ModelRuntime.source}
+ * serves in the file's place; "model", a built model given to
+ * {@link ModelRuntime.withModel}, which no file holds.
+ */
+export type ModelDataOrigin = "file" | "data" | "model";
 
 export interface RuntimeOptions {
   /**
@@ -375,14 +400,35 @@ export class ModelRuntime {
   static async load(
     source: FileSource,
     settingsPath?: string,
-    options: RuntimeOptions = {},
+    options: RuntimeLoadOptions = {},
   ): Promise<ModelRuntime> {
+    const { moc, ...runtimeOptions } = options;
+    let from = source;
+    if (moc !== undefined) {
+      settingsPath = resolveSettingsPath(source, settingsPath);
+      from = await sourceWithMoc(source, settingsPath, mocInputBytes(moc));
+    }
     const runtime = new ModelRuntime(
-      await loadModelBundle(source, settingsPath, loadOptionsOf(options)),
-      options,
+      await loadModelBundle(from, settingsPath, loadOptionsOf(runtimeOptions)),
+      runtimeOptions,
     );
+    runtime.baseSource = source;
+    runtime.modelOrigin = moc === undefined ? "file" : "data";
     await runtime.preloadGroup("Idle");
     return runtime;
+  }
+
+  /** The source without the model data given in place of its `.moc3` (for {@link withData}). */
+  private baseSource: FileSource;
+  private modelOrigin: ModelDataOrigin = "file";
+
+  /**
+   * Where this runtime's model data comes from (experimental): "file" or
+   * "data" when {@link source} serves it as the settings' `.moc3` (so
+   * `NodeRenderer` can draw this runtime), "model" after {@link withModel}.
+   */
+  get modelSource(): ModelDataOrigin {
+    return this.modelOrigin;
   }
 
   /** The options this runtime was made with (for {@link withModel}). */
@@ -404,6 +450,7 @@ export class ModelRuntime {
     this.options = options;
     this.bundle = bundle;
     this.source = bundle.source;
+    this.baseSource = bundle.source;
     this.settingsPath = bundle.settingsPath;
     this.model = bundle.model;
     this.dir = dirnameOf(bundle.settingsPath);
@@ -1572,10 +1619,19 @@ export class ModelRuntime {
    * and listeners do not carry over. This runtime is unchanged.
    */
   async withModel(model: MocModel): Promise<ModelRuntime> {
+    return this.derive(model, this.bundle.source, "model");
+  }
+
+  private async derive(
+    model: MocModel,
+    source: FileSource,
+    origin: ModelDataOrigin,
+  ): Promise<ModelRuntime> {
     const moc = `${this.settings.moc}: `;
     const next = new ModelRuntime(
       {
         ...this.bundle,
+        source,
         model,
         warnings: [
           ...model.loadWarnings.map((w) => moc + w),
@@ -1608,24 +1664,33 @@ export class ModelRuntime {
     for (const [k, v] of this.readyMotions) next.readyMotions.set(k, v);
     for (const [k, v] of this.readySounds) next.readySounds.set(k, v);
     for (const [k, v] of this.expressions) next.expressions.set(k, v);
+    next.baseSource = this.baseSource;
+    next.modelOrigin = origin;
     await next.preloadGroup("Idle");
     return next;
   }
 
   /**
    * {@link withModel} from `.moc3` bytes, or from {@link MocData} of a
-   * `version` (as `mocModelFromData`), loaded with this runtime's options.
-   * Rejects with the errors of `loadMoc` and `mocModelFromData`.
+   * `version` (written with `writeMoc`), loaded with this runtime's options.
+   * The new runtime's {@link source} serves these bytes as the settings'
+   * `.moc3`, so `NodeRenderer` draws its model. Rejects with the errors of
+   * `writeMoc` and `loadMoc` (`MocWriteError`, `MocFormatError`).
    */
   async withData(
     moc: Uint8Array | ArrayBuffer | MocData,
     version?: MocVersion,
   ): Promise<ModelRuntime> {
-    const options = this.loadOptions;
-    if (moc instanceof Uint8Array || moc instanceof ArrayBuffer)
-      return this.withModel(loadMoc(moc, options));
-    if (version === undefined) throw new TypeError("MocData needs its version");
-    return this.withModel(mocModelFromData(moc, version, options));
+    let bytes: Uint8Array;
+    if (moc instanceof Uint8Array || moc instanceof ArrayBuffer) bytes = mocInputBytes(moc);
+    else {
+      if (version === undefined) throw new TypeError("MocData needs its version");
+      bytes = mocInputBytes({ data: moc, version });
+    }
+    const model = loadMoc(bytes, this.loadOptions);
+    // The settings are already read: no file is read again.
+    const mocPath = joinPath(dirnameOf(this.settingsPath), this.settings.moc);
+    return this.derive(model, sourceWithMocAt(this.baseSource, mocPath, bytes), "data");
   }
 
   /** {@link animate} then {@link evaluate}. */

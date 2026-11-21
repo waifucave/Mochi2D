@@ -2,8 +2,7 @@
  * `mocModelFromData(data, version)`: a model straight from MocData, which
  * must be `loadMoc(writeMoc(data, { version }))`, the same model and the same
  * errors: synthetic files of every writable version, DeepSeek-chan, every
- * validation case of the catalog that readMoc reads, and version 6 data
- * (which writeMoc cannot write yet).
+ * validation case of the catalog that readMoc reads, and version 6 data.
  */
 import { describe, expect, it } from "vitest";
 import { MocWriteError, WRITABLE_VERSIONS, readMoc, writeMoc } from "../src/core/moc/io.js";
@@ -83,11 +82,10 @@ describe("mocModelFromData", () => {
     expect(expectSame(bad, 5)).toBeDefined();
   });
 
-  it("takes version 6 data, which writeMoc cannot write yet", () => {
+  it("takes version 6 data, as read from a file", () => {
     const bytes = sampleModel(6);
     const { data, version } = readMoc(bytes);
     expect(version).toBe(6);
-    expect(() => writeMoc(data, { version: 6 })).toThrow(MocWriteError);
     expect(mocModelFromData(data, 6)).toEqual(loadMoc(bytes));
   });
 

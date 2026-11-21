@@ -34,14 +34,36 @@ export interface MotionCurve {
   starts: Uint32Array;
 }
 
+/**
+ * A motion file's values as written (experimental): what an importer needs
+ * besides the resolved values of {@link Motion}, which fill in defaults.
+ */
+export interface MotionAsWritten {
+  /** A copy of the file's `Meta` object: the keys it has, with their values as written. */
+  meta: Readonly<Record<string, unknown>>;
+  /**
+   * Per curve, in file order (curves left out by the order rule too), its
+   * `FadeInTime` and `FadeOutTime` as written; a key is absent when the curve
+   * has none.
+   */
+  curves: readonly { fadeIn?: unknown; fadeOut?: unknown }[];
+}
+
 export interface Motion {
   label: string;
   duration: number;
   fps: number;
   restricted: boolean;
-  /** Fade times from `Meta` (missing or negative: 1). */
+  /**
+   * `Meta.Loop` (missing: false). Playback does not read it: whether a
+   * motion loops is chosen when it starts (`loop` of the start options).
+   */
+  loop: boolean;
+  /** Fade times from `Meta` (missing or negative: 1; {@link written} tells which were written). */
   fadeIn: number;
   fadeOut: number;
+  /** The file's values as written (experimental). */
+  written: MotionAsWritten;
   /** The curves that take effect (3c.2), in file order. */
   curves: MotionCurve[];
   /** Curves left out by the order rule of 3c.2. */
@@ -62,6 +84,13 @@ export function parseMotion(input: Uint8Array | string | unknown, label = "motio
     return x === undefined || x < 0 ? 1 : x;
   };
   const rawCurves = arr(json.Curves);
+  const writtenCurves: { fadeIn?: unknown; fadeOut?: unknown }[] = rawCurves.map((c) => {
+    const cc = obj(c);
+    return {
+      ...("FadeInTime" in cc ? { fadeIn: cc.FadeInTime } : {}),
+      ...("FadeOutTime" in cc ? { fadeOut: cc.FadeOutTime } : {}),
+    };
+  });
   let segments = 0;
   let pointCount = 0;
   const parsed: MotionCurve[] = [];
@@ -134,8 +163,13 @@ export function parseMotion(input: Uint8Array | string | unknown, label = "motio
     duration: num(meta.Duration, 0),
     fps: num(meta.Fps, 0),
     restricted: bool(meta.AreBeziersRestricted),
+    loop: bool(meta.Loop),
     fadeIn: fade(meta.FadeInTime),
     fadeOut: fade(meta.FadeOutTime),
+    written: {
+      meta: JSON.parse(JSON.stringify(meta)) as Record<string, unknown>,
+      curves: writtenCurves,
+    },
     curves,
     ignoredCurves: parsed.length - curves.length,
     events,

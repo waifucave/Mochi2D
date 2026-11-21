@@ -270,7 +270,27 @@ export class NodeRenderer {
 
   private async renderNow(input: RenderInput, o: RenderImageOptions): Promise<RenderedImage> {
     if (this.closed) throw new Error("the renderer is closed");
+    const runtime = typeof input === "object" && "animator" in input ? input : null;
+    if (runtime?.modelSource === "model")
+      throw new Error(
+        `${runtime.settingsPath}: this runtime's model was given as a built model (withModel), ` +
+          "which no file holds; make it with withData(bytes) or withData(data, version) to render it",
+      );
     const { source, settings } = await sourceFor(input);
+    try {
+      return await this.renderSource(input, o, source, settings);
+    } finally {
+      // A runtime's own model data is served for this render only.
+      if (runtime?.modelSource === "data") this.forget(source);
+    }
+  }
+
+  private async renderSource(
+    input: RenderInput,
+    o: RenderImageOptions,
+    source: FileSource,
+    settings: string,
+  ): Promise<RenderedImage> {
     let gen = this.generations.get(source);
     if (gen === undefined) {
       gen = this.nextGeneration++;

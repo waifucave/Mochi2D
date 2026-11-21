@@ -283,8 +283,10 @@ describe.skipIf(!available)("editing in the viewer (headless Chromium)", () => {
     await set("tr[data-part=ArmA] [data-field=group]", "1");
     await set("tr[data-part=ArmB] [data-field=group]", "1");
     await set("tr[data-part=Sleeve] [data-field=follows]", "ArmB");
+    // Wait for every value checked: the link (Sleeve follows ArmB) is live a
+    // frame after the groups can be.
     await waitFor(
-      `v.model.runtime.getPartOpacity("ArmB") === 0 && v.model.runtime.getPartOpacity("ArmA") === 1`,
+      `v.model.runtime.getPartOpacity("ArmB") === 0 && v.model.runtime.getPartOpacity("ArmA") === 1 && v.model.runtime.getPartOpacity("Sleeve") === 0`,
     );
     expect(await viewer<number>("v.model.runtime.getPartOpacity('Sleeve')")).toBe(0);
     const pose = JSON.parse(

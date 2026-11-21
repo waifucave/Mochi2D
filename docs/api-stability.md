@@ -23,6 +23,9 @@ What is still experimental, and why:
 - **Lower-level building blocks** (`Animator`, `loadModelBundle`,
   `loadAnimationAssets` and their types): `ModelRuntime` is the stable way
   to load and animate a model, and these follow its insides.
+- **Model data in place of a `.moc3`** (`MocInput`, `RuntimeLoadOptions`,
+  `ModelDataOrigin`, the `moc` option of `ModelRuntime.load` and the view's
+  `load`, `ModelRuntime.modelSource`): new in 0.22.0, for editors' previews.
 - **Evaluation switches** (`EvaluationOptions`, the `evaluation` option of
   `ModelInstance` and `RuntimeOptions`): new in 0.21.0, for evaluating
   without glue or blend shapes.
@@ -199,7 +202,9 @@ is in.
 | `MappedPoints`        | interface | mochi2d, headless, node, pixi | stable       |
 | `MapPointsOptions`    | interface | mochi2d, headless, node, pixi | stable       |
 | `MapSpace`            | type      | mochi2d, headless, node, pixi | stable       |
+| `MocInput`            | type      | mochi2d, headless, node, pixi | experimental |
 | `ModelBundle`         | interface | headless, node                | experimental |
+| `ModelDataOrigin`     | type      | mochi2d, headless, node, pixi | experimental |
 | `ModelInstance`       | class     | headless, node                | stable       |
 | `ModelRuntime`        | class     | mochi2d, headless, node, pixi | stable       |
 | `ModelSettings`       | interface | headless, node                | stable       |
@@ -217,37 +222,39 @@ is in.
 | `PhysicsSettingInfo`  | interface | mochi2d, headless, node, pixi | stable       |
 | `resolveSettingsPath` | function  | headless, node                | stable       |
 | `RuntimeFrame`        | interface | mochi2d, headless, node, pixi | stable       |
+| `RuntimeLoadOptions`  | interface | mochi2d, headless, node, pixi | experimental |
 | `RuntimeOptions`      | interface | mochi2d, headless, node, pixi | stable       |
 | `SettingsFormatError` | class     | headless, node                | stable       |
 | `ValuePatch`          | interface | mochi2d, headless, node, pixi | stable       |
 
 ### Animation files
 
-| Export                 | Kind      | Entry points                  | Stability |
-| ---------------------- | --------- | ----------------------------- | --------- |
-| `AnimationFormatError` | class     | headless, node                | stable    |
-| `Bounds`               | interface | headless, node                | stable    |
-| `DisplayInfo`          | interface | headless, node                | stable    |
-| `Expression`           | interface | headless, node                | stable    |
-| `Motion`               | interface | headless, node                | stable    |
-| `parseDisplayInfo`     | function  | headless, node                | stable    |
-| `parseExpression`      | function  | headless, node                | stable    |
-| `parseMotion`          | function  | headless, node                | stable    |
-| `parsePhysics`         | function  | mochi2d, headless, node, pixi | stable    |
-| `parsePose`            | function  | headless, node                | stable    |
-| `parseUserData`        | function  | headless, node                | stable    |
-| `PhysicsFile`          | interface | mochi2d, headless, node, pixi | stable    |
-| `PhysicsForces`        | interface | mochi2d, headless, node, pixi | stable    |
-| `PhysicsInput`         | interface | mochi2d, headless, node, pixi | stable    |
-| `PhysicsNormalization` | interface | mochi2d, headless, node, pixi | stable    |
-| `PhysicsOutput`        | interface | mochi2d, headless, node, pixi | stable    |
-| `PhysicsParticle`      | interface | mochi2d, headless, node, pixi | stable    |
-| `PhysicsSetting`       | interface | mochi2d, headless, node, pixi | stable    |
-| `PhysicsState`         | interface | mochi2d, headless, node, pixi | stable    |
-| `UserData`             | interface | headless, node                | stable    |
-| `vertexBounds`         | function  | headless, node                | stable    |
-| `writePhysics`         | function  | mochi2d, headless, node, pixi | stable    |
-| `WritePhysicsOptions`  | interface | mochi2d, headless, node, pixi | stable    |
+| Export                 | Kind      | Entry points                  | Stability    |
+| ---------------------- | --------- | ----------------------------- | ------------ |
+| `AnimationFormatError` | class     | headless, node                | stable       |
+| `Bounds`               | interface | headless, node                | stable       |
+| `DisplayInfo`          | interface | headless, node                | stable       |
+| `Expression`           | interface | headless, node                | stable       |
+| `Motion`               | interface | headless, node                | stable       |
+| `MotionAsWritten`      | interface | headless, node                | experimental |
+| `parseDisplayInfo`     | function  | headless, node                | stable       |
+| `parseExpression`      | function  | headless, node                | stable       |
+| `parseMotion`          | function  | headless, node                | stable       |
+| `parsePhysics`         | function  | mochi2d, headless, node, pixi | stable       |
+| `parsePose`            | function  | headless, node                | stable       |
+| `parseUserData`        | function  | headless, node                | stable       |
+| `PhysicsFile`          | interface | mochi2d, headless, node, pixi | stable       |
+| `PhysicsForces`        | interface | mochi2d, headless, node, pixi | stable       |
+| `PhysicsInput`         | interface | mochi2d, headless, node, pixi | stable       |
+| `PhysicsNormalization` | interface | mochi2d, headless, node, pixi | stable       |
+| `PhysicsOutput`        | interface | mochi2d, headless, node, pixi | stable       |
+| `PhysicsParticle`      | interface | mochi2d, headless, node, pixi | stable       |
+| `PhysicsSetting`       | interface | mochi2d, headless, node, pixi | stable       |
+| `PhysicsState`         | interface | mochi2d, headless, node, pixi | stable       |
+| `UserData`             | interface | headless, node                | stable       |
+| `vertexBounds`         | function  | headless, node                | stable       |
+| `writePhysics`         | function  | mochi2d, headless, node, pixi | stable       |
+| `WritePhysicsOptions`  | interface | mochi2d, headless, node, pixi | stable       |
 
 ### Model data (.moc3)
 

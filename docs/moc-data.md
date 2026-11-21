@@ -11,7 +11,7 @@ const { data, version, diagnostics } = readMoc(bytes); // MocData, 1–6, proble
 data.artMeshes.ids[0];                                  // "ArtMesh0"
 data.parameters.max[3] = 30;                            // edit in place
 const check = validateMoc(data, { version, level: "strict" });
-if (check.valid) bytes = writeMoc(data, { version });   // versions 1–5
+if (check.valid) bytes = writeMoc(data, { version });   // versions 1–6
 ```
 
 These are part of Mochi2D's documented API and follow semantic versioning
@@ -138,6 +138,90 @@ large keys the last key itself can be out of range. Genuine files store 3
 **Flags.** `initiallyVisible`, `enabled` and `visible` (parts, deformers, art
 meshes) and the parameters' `repeat` must be 0 or 1.
 
+## Blend codes and offscreen flags
+
+From version 6, each art mesh and each offscreen has a **blend code**
+(`artMeshes.blendMode`, `offscreens.blendMode`, int32). It combines a color
+function and an alpha mode:
+
+```
+code = color + 256 × alpha      // color: bits 0–7, alpha: bits 8–15, higher bits 0
+```
+
+For example, 0x106 (262) is atop + multiply: color 6, alpha 1.
+
+**Color functions** (bits 0–7). B(s, d) gives the blended color from the
+source color s and the destination color d, both straight (not
+premultiplied), per channel unless noted:
+
+| Color | Name | B(s, d) |
+| --: | --- | --- |
+| 0 | normal | s |
+| 1 | additive (compatible) | the legacy additive blend (below) |
+| 2 | multiplicative (compatible) | the legacy multiplicative blend (below) |
+| 3 | add | min(s + d, 1) |
+| 4 | add-glow | s + d |
+| 5 | darken | min(s, d) |
+| 6 | multiply | s · d |
+| 7 | color burn | 1 if \|d − 1\| < 10⁻⁶; else 0 if \|s\| < 10⁻⁶; else 1 − min(1, (1 − d) / s) |
+| 8 | linear burn | max(0, s + d − 1) |
+| 9 | lighten | max(s, d) |
+| 10 | screen | s + d − s · d |
+| 11 | color dodge | 0 if d ≤ 0; else 1 if s = 1; else min(1, d / (1 − s)) |
+| 12 | overlay | 2 s d if d < 0.5, else 1 − 2 (1 − s)(1 − d) |
+| 13 | soft light | if s ≤ 0.5: d − (1 − 2s) d (1 − d); else if d ≤ 0.25: d + (2s − 1) d ((16d − 12) d + 3); else d + (2s − 1)(√d − d) |
+| 14 | hard light | 2 s d if s < 0.5, else 1 − 2 (1 − s)(1 − d) |
+| 15 | linear light | max(0, 2s + d − 1) if s < 0.5, else min(1, 2 (s − 0.5) + d) |
+| 16 | hue | the whole color: SetLum(SetSat(s, Sat(d)), Lum(d)) |
+| 17 | color | the whole color: SetLum(s, Lum(d)) |
+
+Lum(c) = 0.3 r + 0.59 g + 0.11 b, Sat(c) = max − min of the channels, and
+SetLum and SetSat are the usual nonseparable blend helpers (SetLum shifts
+the color to the luminosity and clips it back into [0, 1] around it).
+
+**Alpha modes** (bits 8–15). With the source and destination alphas A_s and
+A_d, the new pixel is p₁ · B + p₂ · s + p₃ · d in color and p₁ + p₂ + p₃ in
+alpha (premultiplied), clamped to [0, 1]:
+
+| Alpha | Name | p₁ | p₂ | p₃ |
+| --: | --- | --- | --- | --- |
+| 0 | over | A_s · A_d | A_s · (1 − A_d) | A_d · (1 − A_s) |
+| 1 | atop | A_s · A_d | 0 | A_d · (1 − A_s) |
+| 2 | out | 0 | 0 | A_d · (1 − A_s) |
+| 3 | conjoint over | min(A_s, A_d) | max(A_s − A_d, 0) | max(A_d − A_s, 0) |
+| 4 | disjoint over | max(A_s + A_d − 1, 0) | min(A_s, 1 − A_d) | min(A_d, 1 − A_s) |
+
+**How Mochi2D draws them:**
+
+- **Compatible codes** are 0 and any code whose color function is 1 or 2.
+  They are drawn with the three legacy blends, on premultiplied colors, and
+  their alpha mode is not used:
+  - normal: result = src + (1 − A_src) · dst;
+  - additive: rgb = src + dst, alpha = A_dst;
+  - multiplicative: rgb = src · dst + (1 − A_src) · dst, alpha = A_dst.
+- **Every other code** is drawn by the two tables above, from a copy of the
+  destination: 0x100 (atop + normal), for instance, is not compatible.
+- A model whose art meshes all have compatible codes and that has no
+  offscreen is drawn by the direct pipeline; any other model by the layered
+  pipeline (`docs/architecture.md`).
+- **Values outside the tables** are drawn as normal (a color function
+  above 17) and as over (an alpha mode above 4). `validateMoc` does not check
+  the values, so give only codes from the tables.
+- **Before version 6** there is no blend code. The blend comes from art-mesh
+  flag bits 0 and 1 and is reported as code 1 (additive, bit 0, which wins
+  if both are set), 2 (multiplicative, bit 1) or 0. From version 6, those
+  two flag bits are not read for blending: the code is.
+
+**Flags** (`artMeshes.flags` and, from version 6, `offscreens.flags`, uint8):
+
+| Bit | Value | Art mesh | Offscreen |
+| --: | --: | --- | --- |
+| 0 | 1 | additive blend (before version 6) | not read |
+| 1 | 2 | multiplicative blend (before version 6) | not read |
+| 2 | 4 | double-sided: both faces drawn, no back-face culling | not read: an offscreen is composited as a quad over the view, which has no back face. Files set it (4 is the usual value) |
+| 3 | 8 | inverted mask: drawn only outside its masks | inverted mask: the offscreen is composited only outside its masks |
+| 4–7 | | not read | not read |
+
 ## `readMoc`
 
 ```ts
@@ -150,10 +234,19 @@ so editing the data leaves the bytes alone.
 - It throws `MocFormatError` when the bytes cannot be read: its `code` is
   `magic`, `version`, `endianness`, `section-bounds`, `negative-count`,
   `name-terminator` or `file-length` (shorter than the header).
-- It reports, without failing, what leaves the data intact: a file length
-  that is not a multiple of 64 (`file-length`), sections out of slot order
+- It reports, without failing, what lets it read on: a file length that is
+  not a multiple of 64 (`file-length`), sections out of slot order
   (`slot-order`, C26), both errors, and a big-endian file (`big-endian`, a
   warning).
+- **It checks only the file's framing, not its data.** It reads what the
+  layout of the file's version holds, so a file whose version byte is wrong
+  may still read. A file of versions 1–5 marked as version 6 either throws
+  (`section-bounds`) or reads with a `slot-order` error: its count table
+  starts where the longer version 6 offset table is still running. The
+  data read is then meaningless. Treat any `error`
+  in `diagnostics` that way, and run `validateMoc` for the data itself:
+  `loadMoc` and `validateMoc` reject such a file. This is deliberate: an
+  editor can open, inspect and repair files the loader rejects.
 
 ## `writeMoc`
 
@@ -161,8 +254,9 @@ so editing the data leaves the bytes alone.
 writeMoc(data: MocData, options: { version: MocVersion }): Uint8Array
 ```
 
-Writes versions 1–5 (`WRITABLE_VERSIONS`). Version 6 is refused until what
-writing it needs is confirmed.
+Writes versions 1–6 (`WRITABLE_VERSIONS`): version 6 since 0.22.0, with its
+offscreens, offscreen keyforms and blend shapes, and the art meshes' and
+offscreens' blend codes ([below](#blend-codes-and-offscreen-flags)).
 
 - **It refuses, never silently.** It throws `MocWriteError`, whose
   `diagnostics` list every problem: arrays of a later version
@@ -217,9 +311,7 @@ previews in an editor. It is `loadMoc(writeMoc(data, { version }))`: the
 same model, and the same errors. It throws `MocWriteError` for data
 `writeMoc` refuses (data the version cannot hold, values that are not
 float32, or what fails the `official` level) and `MocFormatError` for data
-the loader rejects (Mochi2D's own required rejections). It also takes
-version 6 data, which `writeMoc` cannot write yet, as read from a version 6
-file. Evaluate it with `new ModelInstance(model)`. The model holds copies
+the loader rejects (Mochi2D's own required rejections). Evaluate it with `new ModelInstance(model)`. The model holds copies
 of the arrays: changing `data` afterwards does not change the model. To
 change a loaded model's values, use value patches (`ModelInstance.patch`,
 `MochiModel.patch`; [api.md](api.md#editing-a-shown-model)), which name

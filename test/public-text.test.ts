@@ -42,7 +42,7 @@ const CITATIONS: [RegExp, string][] = [
   [/values from the official runtime|official runtime's (?:values|vectors)/i, "measured values"],
   [/cleanroom\/[\w.-]/, "a path into cleanroom/"],
   [/\bcoordinator\b/i, "the coordinator"],
-  [/\bround[-\s]\d{2}\b|\bround-\d{2}\.md\b/i, "a round of the records"],
+  [/\bround[-\s]\d{2}[a-z]?\b|\bround-\d{2}[a-z]?\.md\b/i, "a round of the records"],
   [/\binbox\s+\d{4}\b/i, "a brief of the records"],
   [
     /\bthe\s+(?:project's\s+)?owner(?:'s)?\s+(?:model|own|files?|decision|recording|review)\b|\bthe\s+owner\s+(?:decided|asked|has)\b/i,
@@ -119,6 +119,8 @@ describe("public files", () => {
       "vetted by the\n * coordinator",
       "Reported in round-01.md.",
       "as round 05 found",
+      "Performance structure (round 01b)",
+      "see round-02b.md",
       "see inbox 0038",
       "a copy of the owner's model",
       "https://claude.ai/code/session_0123",

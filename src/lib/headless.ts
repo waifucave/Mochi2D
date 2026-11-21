@@ -34,7 +34,10 @@ export type {
   PhysicsSettingInfo,
   RuntimeFrame,
   RuntimeOptions,
+  RuntimeLoadOptions,
+  ModelDataOrigin,
 } from "../runtime/model-runtime.js";
+export type { MocInput } from "../runtime/moc-input.js";
 export {
   findSettingsFiles,
   loadAnimationAssets,
@@ -117,7 +120,7 @@ export type { Framing } from "../core/render/framing.js";
 export { Animator } from "../anim/animator.js";
 export type { AnimatorOptions, EffectSwitches, FrameResult } from "../anim/animator.js";
 export { parseMotion } from "../anim/motion.js";
-export type { Motion } from "../anim/motion.js";
+export type { Motion, MotionAsWritten } from "../anim/motion.js";
 export { parseExpression } from "../anim/expression.js";
 export type { Expression } from "../anim/expression.js";
 export { parsePhysics, writePhysics } from "../anim/physics.js";

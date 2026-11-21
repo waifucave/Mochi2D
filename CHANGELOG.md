@@ -14,6 +14,55 @@ internal and can change in any release.
 - [docs/migration.md](docs/migration.md) lists the renames, removals and
   changed behavior since 0.10.0.
 
+## 0.22.1
+
+Tests and a comment only; no API or behavior change.
+
+### Changed
+
+- **`test/viewer-editing.test.ts`:** the pose test waits for every part
+  opacity it checks, the linked sleeve too, before checking it. It could
+  check the sleeve a frame early.
+- **Public text:** a source comment no longer names a development round,
+  and `test/public-text.test.ts` also catches a round with a letter suffix.
+
+## 0.22.0
+
+What an editor needs to export and render version 6 models. Evaluation
+results and renders of existing files are unchanged, bit for bit: the
+conformance catalog and the goldens are untouched.
+
+### Added
+
+- **`writeMoc` writes version 6** (`WRITABLE_VERSIONS` is 1–6):
+  offscreens, offscreen keyforms and blend shapes, and the blend codes. The
+  layout extends that of versions 1–5, and the refusals are the same kinds
+  (`missing-field` for a version 6 array that is missing, and so on).
+- **Model data in place of a `.moc3`** (experimental): `ModelRuntime.load`
+  and `view.load` take `moc` (`.moc3` bytes, or `{ data, version }`), with
+  the other files from the source, so a preview needs no stand-in `.moc3`.
+  New types `MocInput`, `RuntimeLoadOptions` and `ModelDataOrigin`, and
+  `runtime.modelSource`.
+- **Motions as written:** `Motion.loop` (`Meta.Loop`) and `Motion.written`
+  (experimental, type `MotionAsWritten`): the file's `Meta` and curve fades
+  as written, beside the resolved values.
+- **`docs/moc-data.md`:** the blend codes (color functions, alpha modes and
+  how they combine) and the meaning of each art-mesh and offscreen flag
+  bit, as one table; and what `readMoc` checks (the file's framing, not its
+  data).
+
+### Changed
+
+- **`NodeRenderer.render(runtime)`** draws the runtime's own model after
+  `withData` or the `moc` load option; it drew the source's `.moc3` before.
+  A runtime from `withModel` (a built model, which no file holds) is
+  refused with a message naming `withData`.
+- **`runtime.withData(data, version)`** writes the data with `writeMoc` and
+  loads it, so its runtime's `source` serves the new `.moc3`; the errors are
+  those of `mocModelFromData` before (`MocWriteError`, `MocFormatError`).
+- `Motion` has the two new fields: code that builds `Motion` objects by
+  hand needs them.
+
 ## 0.21.1
 
 Documentation and a sample model. No API or behavior change; evaluation

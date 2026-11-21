@@ -128,7 +128,10 @@ export type {
   PhysicsSettingInfo,
   RuntimeFrame,
   RuntimeOptions,
+  RuntimeLoadOptions,
+  ModelDataOrigin,
 } from "../runtime/model-runtime.js";
+export type { MocInput } from "../runtime/moc-input.js";
 export { FileNotFoundError, MemoryFileSource } from "../core/io/file-source.js";
 export {
   ZipFileSource,

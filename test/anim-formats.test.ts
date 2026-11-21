@@ -561,3 +561,50 @@ describe("model settings (3b)", () => {
     expect(s.expressions).toEqual([{ name: "smile", file: "s.exp3.json" }]);
   });
 });
+
+describe("motions as written", () => {
+  const motionFile = (meta: Record<string, unknown>, curve: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      Version: 3,
+      Meta: {
+        Duration: 1,
+        Fps: 30,
+        CurveCount: 1,
+        TotalSegmentCount: 1,
+        TotalPointCount: 2,
+        UserDataCount: 0,
+        TotalUserDataSize: 0,
+        ...meta,
+      },
+      Curves: [{ Target: "Parameter", Id: "P", Segments: [0, 0, 0, 1, 1], ...curve }],
+    });
+
+  it("reports Loop, and the file's own values beside the resolved ones", () => {
+    const m = parseMotion(motionFile({ Loop: true, FadeInTime: 0.25 }, { FadeOutTime: 0.5 }));
+    expect(m.loop).toBe(true);
+    expect([m.fadeIn, m.fadeOut]).toEqual([0.25, 1]); // FadeOutTime missing: 1
+    expect(m.written.meta).toMatchObject({ Loop: true, FadeInTime: 0.25 });
+    expect("FadeOutTime" in m.written.meta).toBe(false);
+    expect(m.written.curves).toEqual([{ fadeOut: 0.5 }]);
+  });
+
+  it("tells a missing Loop and fades from written ones", () => {
+    const m = parseMotion(motionFile({}));
+    expect(m.loop).toBe(false);
+    expect([m.fadeIn, m.fadeOut]).toEqual([1, 1]);
+    expect("Loop" in m.written.meta || "FadeInTime" in m.written.meta).toBe(false);
+    expect(m.written.curves).toEqual([{}]);
+    // A negative fade resolves to 1, and is kept as written.
+    const neg = parseMotion(motionFile({ FadeInTime: -2, Loop: false }));
+    expect(neg.fadeIn).toBe(1);
+    expect(neg.written.meta.FadeInTime).toBe(-2);
+    expect(neg.written.meta.Loop).toBe(false);
+  });
+
+  it("copies Meta: changing the result leaves a reparse alone", () => {
+    const text = motionFile({ Loop: true });
+    const m = parseMotion(text);
+    (m.written.meta as Record<string, unknown>).Loop = false;
+    expect(parseMotion(text).written.meta.Loop).toBe(true);
+  });
+});

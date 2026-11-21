@@ -9,6 +9,7 @@
  * view.on("hit", (e) => model.startMotion("TapBody"));
  * ```
  */
+import { mocInputBytes, sourceWithMoc, type MocInput } from "../runtime/moc-input.js";
 import type { ModelRuntime, MotionEnd, RuntimeOptions } from "../runtime/model-runtime.js";
 import { Emitter } from "./events.js";
 import { bindGestures, type DragMode, type PressInfo } from "./gestures.js";
@@ -143,6 +144,13 @@ export interface LoadOptions {
   settings?: string;
   /** Keep the current model's view (zoom, pan, rotation) for the new one. Default false. */
   keepView?: boolean;
+  /**
+   * The model as `.moc3` bytes or `{ data, version }` (written with
+   * `writeMoc`), in place of the settings' `.moc3`, which then need not exist
+   * in the input (experimental). The settings, textures and other files still
+   * come from the input.
+   */
+  moc?: MocInput;
 }
 
 /** A tap (or click) on the canvas, with what lies under it. */
@@ -311,8 +319,12 @@ export class MochiView implements ModelHost, ItemHost {
     if (this.disposed) throw new Error("the view is disposed");
     const token = ++this.loadToken;
     const opened = await openModelInput(input, options.settings);
+    const source =
+      options.moc === undefined
+        ? opened.source
+        : await sourceWithMoc(opened.source, opened.settingsPath, mocInputBytes(options.moc));
     const profile = deviceProfile();
-    const live = await loadLiveModel(this.stage.gl, opened.source, opened.settingsPath, {
+    const live = await loadLiveModel(this.stage.gl, source, opened.settingsPath, {
       textureBudget: resolveTextureBudget(this.options.textureBudget ?? "auto", profile).bytes,
       ...(profile.constrained ? { decodeWorkers: 1 } : {}),
       masks: MASK_SETTINGS[this.options.masks ?? "atlas"],

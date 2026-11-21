@@ -86,8 +86,8 @@ export interface MocReadResult {
   diagnostics: MocDiagnostic[];
 }
 
-/** The versions `writeMoc` writes (writing version 6 is not supported yet). */
-export const WRITABLE_VERSIONS: readonly MocVersion[] = [1, 2, 3, 4, 5];
+/** The versions `writeMoc` writes: every version (6 since 0.22.0). */
+export const WRITABLE_VERSIONS: readonly MocVersion[] = [1, 2, 3, 4, 5, 6];
 
 const fieldSpec = new Map<FieldKey, FieldSpec>(FIELDS.map((f) => [f.key, f]));
 const TYPED: Record<Exclude<ElementType, "name" | "placeholder">, string> = {
@@ -216,7 +216,7 @@ function endiannessError(bytes: ArrayBuffer | ArrayBufferView, e: unknown): MocF
 // ------------------------------------------------------------------- write
 
 export interface WriteMocOptions {
-  /** The file version to write (1–5). */
+  /** The file version to write (1–6). */
   version: MocVersion;
 }
 
@@ -404,7 +404,7 @@ export function checkMocDataShape(
 }
 
 /**
- * Writes {@link MocData} as a `.moc3` file of `version` (1–5). Throws
+ * Writes {@link MocData} as a `.moc3` file of `version` (1–6). Throws
  * {@link MocWriteError} with every problem when the data does not fit the
  * version (arrays missing or of a later version, wrong types or lengths, IDs
  * longer than 63 bytes, canvas values that are not float32), or when the
@@ -440,10 +440,7 @@ function checkWritableVersion(version: number | undefined): MocVersion {
         code: "version-unsupported",
         severity: "error",
         kind: "file",
-        message:
-          version === 6
-            ? "writing version 6 is not supported yet: writeMoc writes versions 1–5"
-            : `cannot write version ${String(version)}: writeMoc writes versions 1–5`,
+        message: `cannot write version ${String(version)}: writeMoc writes versions 1–6`,
       },
     ]);
   return version as MocVersion;

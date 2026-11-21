@@ -33,6 +33,7 @@ const GROUPS = [
     [
       "runtime/model-runtime",
       "runtime/bundle",
+      "runtime/moc-input",
       "core/eval",
       "core/settings",
       "anim/animator",

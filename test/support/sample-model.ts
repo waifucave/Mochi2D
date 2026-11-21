@@ -86,6 +86,47 @@ export function sampleModel(version: number): Uint8Array {
           { angle: 20, x: 0.5, y: 0.5, scale: 1 },
         ],
       });
+    if (version >= 6) {
+      // An offscreen on Child (atop + multiply, masked, inverted), a mesh in it
+      // drawn with atop + hard light, and a blend shape on the offscreen.
+      const off = s.offscreen({
+        part: 1,
+        flags: 4 | 8,
+        blendMode: 0x106,
+        masks: [mask],
+        keyforms: [{ opacity: 0.8, multiply: [1, 0.9, 0.8], screen: [0, 0.1, 0] }],
+      });
+      const inner = s.mesh({
+        id: "Inner",
+        part: 1,
+        deformer: warp,
+        blendMode: 0x10e,
+        keyforms: [{ positions: tri, drawOrder: 510 }],
+      });
+      // Child (the offscreen's part) in the root group, its mesh in its own group.
+      s.groups = [
+        {
+          min: 0,
+          max: 1000,
+          objects: [
+            { kind: 0, index: mask },
+            { kind: 0, index: mesh },
+            { kind: 1, index: 1, nested: 1 },
+          ],
+        },
+        { min: 0, max: 1000, objects: [{ kind: 0, index: inner }] },
+      ];
+      s.blendShape("offscreen", off, {
+        param: bs,
+        keys: [-1, 0, 1],
+        base: 1,
+        keyforms: [
+          { opacity: -0.3, multiply: [0, 0, 0], screen: [0, 0, 0] },
+          { opacity: 0, multiply: [0, 0, 0], screen: [0, 0, 0] },
+          { opacity: 0.2, multiply: [0, 0, 0], screen: [0.1, 0.1, 0.1] },
+        ],
+      });
+    }
   }
   return s.build();
 }

@@ -1,8 +1,7 @@
 /**
  * A loaded model straight from {@link MocData}, without writing a file:
  * `mocModelFromData(data, version)` is `loadMoc(writeMoc(data, { version }))`
- * (the same model, the same errors) for versions 1–5, and also takes
- * version 6 data, which `writeMoc` cannot write yet.
+ * (the same model, the same errors), for versions 1–6.
  */
 import { buildModel, type LoadMocOptions, type MocModel } from "./model.js";
 import type { MocSections } from "./read.js";

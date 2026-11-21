@@ -15,7 +15,7 @@
  */
 import { Count, type FieldKey } from "./schema.js";
 
-/** File versions: 1–6 can be read; `writeMoc` writes 1–5. */
+/** File versions: 1–6, read and written. */
 export type MocVersion = 1 | 2 | 3 | 4 | 5 | 6;
 
 /** The canvas block (§1b.4). Float values are float32 values. */

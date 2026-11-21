@@ -9,7 +9,7 @@
  * running product in band order of t or f32(1 − t). Draw orders then get
  * their own formula, with its fixed tolerance of 0.001 (see drawOrder).
  *
- * Performance structure (round 01b), with float32 operations kept in exactly
+ * Performance structure, with float32 operations kept in exactly
  * the order of the reference formulation:
  * - static data comes from a per-model plan (plan.ts): compact keyform value
  *   arrays and exactly constant-folded properties;

@@ -66,10 +66,15 @@ detail is lost.
 
 ### Loading
 
-`view.load(input, { settings?, keepView? })` loads a model and shows it in
+`view.load(input, { settings?, keepView?, moc? })` loads a model and shows it in
 place of the current one (which is disposed). It resolves with a
 `MochiModel`. With `keepView: true`, the new model is shown with the zoom,
 offset and rotation of the one before (by default the view starts fitted).
+With `moc` (experimental), the model is the `.moc3` bytes or
+`{ data, version }` given (written with `writeMoc`), in place of the
+settings' `.moc3`, which then need not exist; the settings, textures and
+other files still come from the input ([Model data in place of a
+`.moc3`](#model-data-in-place-of-a-moc3)).
 The input can be:
 
 - a URL (string or `URL`) of a `*.model3.json` file, or of a `.zip` archive;
@@ -1064,7 +1069,36 @@ Art meshes whose texture index the settings do not list are not drawn.
 Without a view, `runtime.withData(moc, version?)` (or `withModel(model)`,
 with a model from `loadMoc` or `mocModelFromData`) returns a new
 `ModelRuntime` for the other data, with the same settings, files and options
-and the state listed above. The runtime it came from is unchanged.
+and the state listed above. The runtime it came from is unchanged. A
+runtime from `withData` serves its data as the settings' `.moc3`, so
+`NodeRenderer` draws it; one from `withModel` holds a built model that no
+file holds, and `NodeRenderer` refuses it (use `withData`).
+
+#### Model data in place of a `.moc3`
+
+Editors that hold the model as `MocData` load and render it without writing
+a stand-in `.moc3` (experimental):
+
+```ts
+// The settings, textures, physics and motions from the source; the model from the data.
+const runtime = await ModelRuntime.load(source, "model.model3.json", {
+  moc: { data, version: 6 }, // or the .moc3 bytes
+});
+const { png } = await renderer.render(runtime, { width: 512 });
+const edited = await runtime.withData(nextData, 6); // renders too
+await view.load(url, { moc: { data, version: 6 } });
+```
+
+- `moc` is `MocInput`: `.moc3` bytes, or `{ data, version }`, written with
+  `writeMoc`. Data it refuses rejects with its `MocWriteError`; bytes the
+  loader rejects, with `MocFormatError`.
+- The runtime's `source` serves the bytes at the settings' `Moc` path; every
+  other file comes from the source.
+- `runtime.modelSource` says where the model comes from: `"file"` (the
+  source's `.moc3`), `"data"` (`moc`, or `withData`) or `"model"`
+  (`withModel`). `NodeRenderer` draws `"file"` and `"data"` runtimes.
+- Repeated `withData` calls each build on the original source, so old data
+  is not kept alive by the new runtime.
 
 The browser bundle (`mochi2d`) exports `mocModelFromData`, `readMoc`,
 `writeMoc` and the `MocData` types too.
@@ -1202,8 +1236,9 @@ for (let i = 0; i < 60; i++) model.update(1 / 60); // animate and evaluate one f
 const vertices = model.instance.drawableVertices; // per drawable: x, y pairs in model units
 ```
 
-`ModelRuntime.load(source, settingsPath?, options?)` loads from any
-`FileSource`: `MemoryFileSource`, `sourceFromZip(label, bytes)`, or in Node
+`ModelRuntime.load(source, settingsPath?, options?)` (the options below, and
+`moc`: [model data in place of a `.moc3`](#model-data-in-place-of-a-moc3))
+loads from any `FileSource`: `MemoryFileSource`, `sourceFromZip(label, bytes)`, or in Node
 `sourceFromFolder(dir)` and `sourceFromZipFile(path)` (named
 `folderSource` and `zipFileSource` before 0.16.0). It has the same parameter,
 part, motion, expression, look and effect methods as `MochiModel`
@@ -1357,6 +1392,15 @@ Lower-level building blocks (`loadMoc`, `ModelInstance`, `Animator`,
 `parseMotion`, `parseExpression`, `parsePhysics`, `decodeWav`,
 `runAnimationScenario`, …) are exported from `mochi2d/headless` as well.
 
+**Motions as written.** `parseMotion(text)` resolves the file's values
+(missing or negative fades become 1). Beside them, `motion.loop` is
+`Meta.Loop` (missing: false; playback doesn't read it, since looping is
+chosen when a motion starts), and `motion.written` (experimental) has the
+file's values as written: `meta`, a copy of the `Meta` object with only the
+keys the file has, and `curves`, each curve's `FadeInTime` and
+`FadeOutTime` (as `fadeIn`, `fadeOut`) where the curve has them. An
+importer can tell a missing fade from a written 1.
+
 **What the loaders throw.** For a damaged or unsupported file, each loader
 throws only its own error class (fuzzed, see `docs/architecture.md`):
 
@@ -1427,7 +1471,9 @@ everything else in `mochi2d/node` works. `NodeRenderer.open(options)` takes
 load it from) and `webDir` (a built web folder other than the package's).
 
 `renderer.render(input, options)` renders a `ModelRuntime` at its current
-pose (its parameter values, part opacities and tints), a `*.model3.json`
+pose (its parameter values, part opacities and tints, and its own model
+data after `withData` or the `moc` load option; a runtime from `withModel`
+is refused), a `*.model3.json`
 file, folder or `.zip` on disk, or `{ source, settings? }` (any
 `FileSource`, an in-memory one included) at its default pose. Options:
 `width`, `height` (default 1024), `parameters` and `partOpacities` (over the

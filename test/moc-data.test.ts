@@ -18,12 +18,14 @@ import { MOC_DATA_GROUPS, MOC_DATA_LAYOUT, type MocData } from "../src/core/moc/
 import { FIELDS, Count } from "../src/core/moc/schema.js";
 import { MocFormatError } from "../src/core/moc/read.js";
 import { loadMoc } from "../src/core/moc/model.js";
+import { validateMoc } from "../src/core/moc/validate.js";
 import { writeMoc as writeRawMoc } from "../src/core/moc/write.js";
 import { ModelInstance } from "../src/core/eval/instance.js";
 import { snapshotInstance, formatResultJson } from "../src/core/model/snapshot.js";
 import { Synth } from "./support/synth.js";
 import { sampleModel } from "./support/sample-model.js";
 import { DEEPSEEK, HAVE_DEEPSEEK } from "./support/deepseek.js";
+import { craftQ2, craftV6 } from "../tools/lib/catalog/moc-crafts.js";
 
 function evaluateBytes(bytes: Uint8Array, parameters: Record<string, number> = {}): string {
   const inst = new ModelInstance(loadMoc(bytes));
@@ -80,7 +82,8 @@ describe("readMoc and writeMoc", () => {
     expect(r.version).toBe(version);
     expect(r.diagnostics).toEqual([]);
     // Exactly the fields of the version.
-    expect(r.data.parts.offscreen).toBeUndefined();
+    expect(r.data.parts.offscreen === undefined).toBe(version < 6);
+    expect(r.data.artMeshes.blendMode === undefined).toBe(version < 6);
     expect(r.data.warpDeformers.bilinear === undefined).toBe(version < 2);
     expect(r.data.multiplyColors === undefined).toBe(version < 4);
     expect(r.data.warpKeyforms.multiplyColor === undefined).toBe(version < 5);
@@ -142,14 +145,113 @@ describe("readMoc and writeMoc", () => {
     expect(readMoc(original).data.keyformPositions[0]).not.toBe(123);
   });
 
-  it("refuse version 6, and versions that do not exist", () => {
+  it.skipIf(!HAVE_DEEPSEEK)(
+    "round-trip the version-6 crafts (ds-v6, q2c, q2d): the same data, the same evaluation",
+    () => {
+      // The crafts come from the tests' raw writer, which puts every section on a
+      // 64-byte boundary; writeMoc packs ID arrays after their placeholders, as
+      // genuine files do. So the bytes differ in layout, and the data does not.
+      for (const [name, craft] of [
+        ["ds-v6", craftV6()],
+        ["q2c", craftQ2("q2c")],
+        ["q2d", craftQ2("q2d")],
+      ] as const) {
+        const r = readMoc(craft);
+        expect([r.version, r.diagnostics], name).toEqual([6, []]);
+        const written = writeMoc(r.data, { version: 6 });
+        expect(written.length, name).toBe(craft.length);
+        const again = readMoc(written);
+        expect(again.data, name).toEqual(r.data);
+        expect(Buffer.from(writeMoc(again.data, { version: 6 })).equals(Buffer.from(written))).toBe(
+          true,
+        );
+        expect(evaluateBytes(written), name).toBe(evaluateBytes(craft));
+      }
+    },
+    120000,
+  );
+
+  it("lay version 6 out the same way: 1,440 offset slots, then the count table", () => {
+    const bytes = writeMoc(readMoc(sampleModel(6)).data, { version: 6 });
+    const dv = new DataView(bytes.buffer);
+    expect([bytes[4], bytes[5]]).toEqual([6, 0]);
+    const slot = (i: number) => dv.getUint32(64 + i * 4, true);
+    expect(slot(0)).toBe(64 + 1440 * 4);
+    expect(slot(1)).toBe(slot(0) + 256);
+    expect(slot(2) % 64).toBe(0);
+    expect(slot(3)).toBe(slot(2) + 16);
+    // The version-6 arrays have their sections; slots past the last are 0.
+    for (const s of [152, 153, 155, 156, 157, 160, 161]) expect(slot(s)).toBeGreaterThan(0);
+    for (let i = 167; i < 1440; i++) expect(slot(i)).toBe(0);
+  });
+
+  it("write version-6 data built in code: it validates at both levels, loads and evaluates", () => {
+    const check = (d: MocData) => {
+      const bytes = writeMoc(d, { version: 6 });
+      for (const level of ["official", "strict"] as const)
+        expect(validateMoc(bytes, { level }).diagnostics, level).toEqual([]);
+      expect(readMoc(bytes).data).toEqual(d);
+      const model = loadMoc(bytes);
+      const inst = new ModelInstance(model);
+      inst.evaluate();
+      return { model, inst };
+    };
+    // Version-5 data given the version-6 arrays in code: blend codes, no offscreen.
+    const d: MocData = structuredClone(readMoc(sampleModel(5)).data);
+    d.parts.offscreen = new Int32Array(d.parts.ids.length).fill(-1);
+    d.artMeshes.blendMode = Int32Array.from(d.artMeshes.ids, (_, m) => (m === 1 ? 0x106 : 0));
+    d.partKeyforms.offscreenKeyform = new Int32Array(d.partKeyforms.drawOrder.length).fill(-1);
+    d.offscreens = {
+      part: new Int32Array(0),
+      flags: new Uint8Array(0),
+      blendMode: new Int32Array(0),
+      firstMask: new Int32Array(0),
+      maskCount: new Int32Array(0),
+    };
+    d.offscreenKeyforms = {
+      opacity: new Float32Array(0),
+      multiplyColor: new Int32Array(0),
+      screenColor: new Int32Array(0),
+    };
+    d.offscreenBlendShapeTargets = {
+      object: new Int32Array(0),
+      firstBinding: new Int32Array(0),
+      bindingCount: new Int32Array(0),
+    };
+    const plain = check(d);
+    expect(Array.from(plain.model.meshes.blendMode)).toEqual([0, 0x106]);
+    // The version-6 sample's offscreen, changed in code: blend code, flags, opacity.
+    const v6: MocData = structuredClone(readMoc(sampleModel(6)).data);
+    v6.offscreens!.blendMode[0] = 0x40a; // disjoint over + screen
+    v6.offscreens!.flags[0] = 4;
+    v6.offscreenKeyforms!.opacity[0] = 0.5;
+    const off = check(v6);
+    expect(Array.from(off.model.offscreens.blendMode)).toEqual([0x40a]);
+    expect(Array.from(off.model.offscreens.flags)).toEqual([4]);
+    expect(off.inst.offscreenOpacity[0]).toBe(0.5);
+  });
+
+  it("refuse versions that do not exist, and version-5 data as version 6", () => {
     const data = readMoc(sampleModel(5)).data;
-    expect(refusal(() => writeMoc(data, { version: 6 }))[0]).toMatchObject({
-      code: "version-unsupported",
-      kind: "file",
-    });
-    expect(refusal(() => writeMoc(data, { version: 7 as never }))[0]!.code).toBe(
-      "version-unsupported",
+    for (const version of [0, 7]) {
+      expect(refusal(() => writeMoc(data, { version: version as never }))[0]).toMatchObject({
+        code: "version-unsupported",
+        kind: "file",
+      });
+    }
+    // Version 6 needs its arrays, and names each one missing.
+    const missing = refusal(() => writeMoc(data, { version: 6 }))
+      .filter((d) => d.code === "missing-field")
+      .map((d) => `${d.kind}${d.field ? `.${d.field}` : ""}`)
+      .sort();
+    expect(missing).toEqual(
+      expect.arrayContaining([
+        "artMeshes.blendMode",
+        "offscreenKeyforms",
+        "offscreens",
+        "partKeyforms.offscreenKeyform",
+        "parts.offscreen",
+      ]),
     );
   });
 
@@ -247,6 +349,28 @@ describe("readMoc and writeMoc", () => {
 });
 
 describe("readMoc's diagnostics and errors", () => {
+  it("refuse or flag files of versions 1–5 marked as version 6 (the loader and validator reject them)", () => {
+    for (const v of [1, 3, 5]) {
+      const b = sampleModel(v).slice();
+      b[4] = 6;
+      // readMoc never reads it cleanly: it throws, or reports a slot-order error.
+      let codes: string[];
+      try {
+        const r = readMoc(b);
+        codes = r.diagnostics.filter((d) => d.severity === "error").map((d) => d.code);
+      } catch (e) {
+        expect(e).toBeInstanceOf(MocFormatError);
+        codes = [(e as MocFormatError).code];
+      }
+      expect(
+        codes.some((c) => c === "slot-order" || c === "section-bounds"),
+        `v${v}`,
+      ).toBe(true);
+      expect(validateMoc(b, { level: "official" }).valid).toBe(false);
+      expect(() => loadMoc(b)).toThrow(MocFormatError);
+    }
+  });
+
   it("read big-endian files, with a warning", () => {
     const s = new Synth(4);
     s.part({ id: "Root" });
