@@ -239,7 +239,12 @@ HttpFileSource(baseUrl, label, limits)` and `new BrowserFileSource`.
   never read whole first.
 - **Optional files** (physics, motions, expressions…) past a cap are not
   read, and the model loads without them, with a warning; the settings and
-  the `.moc3` past a cap fail the load.
+  the `.moc3` past a cap fail the load. A motion past a cap rejects
+  `startMotion` with its `FileLimitError`; a motion sound past a cap (or
+  missing) is not played, and `warnings` names it.
+- **Renders in Node:** `NodeRenderer.render` reads a model's files through
+  the same caps (`files`), and a file past one, a texture included,
+  rejects with the same `FileLimitError` and fields as in a page.
 - **In-memory input** (`{ files }`, a `FileSource` of your own) is already
   held, so these caps don't apply to it.
 
@@ -1586,7 +1591,7 @@ throws only its own error class (fuzzed, see `docs/architecture.md`):
 | `parseMotion`, `parseExpression`, `parsePhysics`, `parsePose`, `parseDisplayInfo`, `parseUserData`, `parseMotionSync` | `AnimationFormatError` |
 | zip sources (`sourceFromZip`, `ZipFileSource`, a damaged entry when it is read) | `ZipFormatError`; RAR and 7z archives `UnsupportedArchiveError`; past a cap, `ArchiveLimitError` |
 | a model's textures (`view.load`, `view.addItem`, `MochiSprite.from`, `NodeRenderer.render`; `readTextureHeader`) | `TextureFormatError`; past a cap, `TextureLimitError` |
-| folder, URL and picked-file sources, a file past a cap | `FileLimitError` |
+| folder, URL and picked-file sources, a file past a cap (also through `NodeRenderer.render`) | `FileLimitError` |
 | `decodeWav` | `WavFormatError` |
 | `decodeMotionSyncWav` (also refuses sample rates outside 1–768 kHz) | `MotionSyncAudioError` |
 | file sources, a path that is not there | `FileNotFoundError` |

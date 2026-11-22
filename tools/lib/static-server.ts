@@ -4,7 +4,9 @@
  * harness and `npm run viewer`.
  */
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { ERROR_HEADER, errorToHeader, statusForReadError } from "../../src/platform/wire-errors.js";
 import { extname, join, resolve, sep } from "node:path";
 import { listModelFiles, modelSearchDirs, resolveModelFile } from "./model-roots.js";
 
@@ -64,17 +66,39 @@ export function sendBytes(res: ServerResponse, path: string, data: Uint8Array): 
   res.end(data);
 }
 
+/**
+ * Answers a read the source refused with its error, typed, in a header the
+ * render harness reads (`ServedFileSource`): "not found" stays a 404.
+ */
+export function sendReadError(res: ServerResponse, e: unknown): void {
+  res.statusCode = statusForReadError(e);
+  res.setHeader(ERROR_HEADER, errorToHeader(e));
+  res.setHeader("Cache-Control", "no-cache");
+  res.end();
+}
+
+/**
+ * Sends a file streamed, with its length: a page refuses one past its cap
+ * on the length alone (`FileLimits`), and nothing here reads it whole.
+ */
 async function sendFile(res: ServerResponse, file: string | undefined): Promise<void> {
+  let size: number;
   try {
-    if (!file || !(await stat(file)).isFile()) throw new Error("not a file");
-    const data = await readFile(file);
-    res.setHeader("Content-Type", contentType(file));
-    res.setHeader("Cache-Control", "no-cache");
-    res.end(data);
+    const st = await stat(file ?? "");
+    if (!file || !st.isFile()) throw new Error("not a file");
+    size = st.size;
   } catch {
     res.statusCode = 404;
     res.end("not found");
+    return;
   }
+  res.setHeader("Content-Type", contentType(file));
+  res.setHeader("Content-Length", String(size));
+  res.setHeader("Cache-Control", "no-cache");
+  const stream = createReadStream(file);
+  stream.on("error", () => res.destroy());
+  res.on("close", () => stream.destroy());
+  stream.pipe(res);
 }
 
 export interface RunningServer {

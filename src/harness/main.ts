@@ -29,7 +29,6 @@ import {
 import { loadModelTextures } from "../render/model/load-textures.js";
 import { frameImage, type RenderView } from "../core/render/framing.js";
 import type { AlphaMode } from "../core/image/alpha.js";
-import { HttpFileSource } from "../platform/browser-sources.js";
 import {
   blendTest,
   geometryStreamTest,
@@ -45,7 +44,9 @@ import {
   type RenderBenchResult,
 } from "./render-bench.js";
 import type { Texture2D } from "../render/gl/texture.js";
-import { textureErrorForWire, type TextureLimits } from "../core/image/texture-limits.js";
+import type { TextureLimits } from "../core/image/texture-limits.js";
+import { errorForWire } from "../platform/wire-errors.js";
+import { ServedFileSource } from "./served-source.js";
 
 export interface HarnessRequest {
   width: number;
@@ -252,7 +253,7 @@ async function loadedFor(
   rendererCache = null;
   loadedCache?.release();
   loadedCache = null;
-  const source = new HttpFileSource(new URL("/models/", location.href).href, "models");
+  const source = new ServedFileSource(new URL("/models/", location.href).href, "models");
   const loaded = await loadModelFromSource(
     source,
     path,
@@ -322,20 +323,34 @@ async function rendererFor(
 }
 
 /**
- * {@link renderImage} with the request's texture caps. A texture they refuse
- * rejects with its fields on a marked line (`textureErrorForWire`), so a
- * caller in Node can rethrow the same typed error; no caller can take a
- * refusal for an image.
+ * {@link renderImage} with the request's texture caps. No caller can take a
+ * refusal for an image: it rejects (and every method of the harness rejects
+ * with its error's name and fields on a marked line, `errorForWire`, so a
+ * caller in Node can rethrow the same typed error).
  */
 async function render(req: HarnessRequest): Promise<HarnessResult> {
   requestLimits = fromWire(req.textureLimits);
   try {
     return await renderImage(req);
-  } catch (e) {
-    throw textureErrorForWire(e);
   } finally {
     requestLimits = {};
   }
+}
+
+/** A harness method as the page exposes it: asynchronous, its errors marked. */
+type Wired<F extends (...args: never[]) => unknown> = (
+  ...args: Parameters<F>
+) => Promise<Awaited<ReturnType<F>>>;
+
+/** `fn`, rejecting with its error's name and fields on a marked line. */
+function wired<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => Promise<Awaited<R>> {
+  return async (...args: A): Promise<Awaited<R>> => {
+    try {
+      return (await fn(...args)) as Awaited<R>;
+    } catch (e) {
+      throw errorForWire(e);
+    }
+  };
 }
 
 async function renderImage(req: HarnessRequest): Promise<HarnessResult> {
@@ -570,7 +585,7 @@ async function benchmark(req: {
   stages?: boolean;
   kernels?: KernelChoice;
 }): Promise<BenchResult> {
-  const source = new HttpFileSource(new URL("/models/", location.href).href, "models");
+  const source = new ServedFileSource(new URL("/models/", location.href).href, "models");
   const { model } = await loadModelFromSource(source, req.model);
   return benchmarkEvaluation(model, req.mode, () => performance.now(), {
     ...(req.poses !== undefined ? { poses: req.poses } : {}),
@@ -605,23 +620,23 @@ declare global {
   interface Window {
     mochi2dHarness: {
       ready: true;
-      render: typeof render;
+      render: Wired<typeof render>;
       info: typeof info;
-      selfTest: typeof selfTest;
+      selfTest: Wired<typeof selfTest>;
       probeTextures: (req: TextureProbeRequest) => Promise<unknown>;
-      benchmark: typeof benchmark;
-      renderBenchmark: typeof renderBenchmark;
-      compareMaskModes: typeof compareMaskModes;
+      benchmark: Wired<typeof benchmark>;
+      renderBenchmark: Wired<typeof renderBenchmark>;
+      compareMaskModes: Wired<typeof compareMaskModes>;
     };
   }
 }
 window.mochi2dHarness = {
   ready: true,
-  render,
+  render: wired(render),
   info,
-  selfTest,
-  probeTextures: (req) => probeTextures(gl, req),
-  benchmark,
-  renderBenchmark,
-  compareMaskModes,
+  selfTest: wired(selfTest),
+  probeTextures: wired((req: TextureProbeRequest) => probeTextures(gl, req)),
+  benchmark: wired(benchmark),
+  renderBenchmark: wired(renderBenchmark),
+  compareMaskModes: wired(compareMaskModes),
 };

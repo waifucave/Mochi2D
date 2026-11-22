@@ -8,7 +8,7 @@ import { join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { FileSource } from "../../../src/core/io/file-source.js";
 import { openRenderSession, type RenderSession } from "../render-runner.js";
-import { sendBytes } from "../static-server.js";
+import { sendBytes, sendReadError } from "../static-server.js";
 import { SCENARIO_FORMAT, type ScenarioRender } from "../scenario.js";
 import { encodePng } from "../png.js";
 
@@ -77,9 +77,9 @@ export class AgentRenderer {
     try {
       const path = rel.slice(cur.prefix.length);
       sendBytes(res, path, await cur.source.read(path));
-    } catch {
-      res.statusCode = 404;
-      res.end("not found");
+    } catch (e) {
+      // The source's own error (a file past a cap, a path not allowed), typed, to the page.
+      sendReadError(res, e);
     }
   };
 

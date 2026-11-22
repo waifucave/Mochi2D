@@ -27,15 +27,17 @@ import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FileSource } from "../core/io/file-source.js";
 import type { FileLimits } from "../core/io/file-limits.js";
-import {
-  resolveTextureLimits,
-  textureErrorFromMessage,
-  type TextureLimits,
-} from "../core/image/texture-limits.js";
+import { resolveTextureLimits, type TextureLimits } from "../core/image/texture-limits.js";
 import { resolveSettingsPath } from "../runtime/bundle.js";
 import { rejectUnsupportedArchive } from "../runtime/zip-source.js";
 import type { ModelRuntime } from "../runtime/model-runtime.js";
 import { sourceFromFolder, sourceFromZipFile } from "../platform/node-sources.js";
+import {
+  ERROR_HEADER,
+  errorToHeader,
+  statusForReadError,
+  wireErrorFromMessage,
+} from "../platform/wire-errors.js";
 import {
   CHROMIUM_OFFLINE_ARGS,
   launchChromium,
@@ -209,7 +211,16 @@ export class NodeRenderer {
         const models = /^\/models\/(\d+)\/(.+)$/.exec(path);
         if (models) {
           const source = renderer?.sources.get(Number(models[1]));
-          data = source ? await source.read(models[2]!).catch(() => null) : null;
+          try {
+            data = source ? await source.read(models[2]!) : null;
+          } catch (e) {
+            // The source's own error (a file past a cap, a damaged zip entry),
+            // typed, to the page, which rejects with it.
+            res.statusCode = statusForReadError(e);
+            res.setHeader(ERROR_HEADER, errorToHeader(e));
+            res.end();
+            return;
+          }
         } else {
           const full = resolve(join(webDir, path));
           if (full.startsWith(webDir + sep) && (await stat(full).catch(() => null))?.isFile())
@@ -378,9 +389,10 @@ export class NodeRenderer {
       );
     } catch (e) {
       const msg = (e instanceof Error ? e.message : String(e)).replace(/^page\.evaluate: /, "");
-      // A texture the caps refuse: the same typed error a page gets.
-      const refused = textureErrorFromMessage(msg);
-      if (refused) throw refused;
+      // One of our errors (a texture or file past its cap, a damaged file):
+      // the same typed error, with its fields, that a page gets.
+      const typed = wireErrorFromMessage(msg);
+      if (typed && typed.name !== "Error") throw typed;
       throw new Error(
         `${settings}: ${msg.split("\n")[0]}${this.errors.length ? ` (${this.errors.join("; ")})` : ""}`,
       );

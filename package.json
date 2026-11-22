@@ -1,6 +1,6 @@
 {
   "name": "mochi2d",
-  "version": "0.24.0",
+  "version": "0.24.1",
   "private": true,
   "license": "MIT",
   "description": "An open-source runtime for models made with Live2D Cubism",

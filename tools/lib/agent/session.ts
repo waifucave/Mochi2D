@@ -14,7 +14,7 @@ import {
   skippedSoundWarning,
 } from "../../../src/anim/sound-format.js";
 import { checkTextures, readTextureHeader } from "../../../src/core/image/texture-limits.js";
-import { errorFields } from "./errors.js";
+import { errorFields, errorLine } from "./errors.js";
 import { ModelRuntime } from "../../../src/runtime/model-runtime.js";
 import type { EffectName } from "../../../src/runtime/model-runtime.js";
 import type { FileSource } from "../../../src/core/io/file-source.js";
@@ -92,7 +92,8 @@ async function soundReport(rt: ModelRuntime): Promise<string[]> {
     try {
       bytes = await rt.source.read(rt.resolve(s));
     } catch (e) {
-      out.push(`${s}: motion sound not found (${e instanceof Error ? e.message : String(e)})`);
+      // Missing, or past a cap: the runtime's own warning, with the error's type.
+      out.push(skippedSoundWarning(s, errorLine(e)));
       continue;
     }
     const reason = skippedSoundReason(bytes);

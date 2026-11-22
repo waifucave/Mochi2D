@@ -14,6 +14,38 @@ internal and can change in any release.
 - [docs/migration.md](docs/migration.md) lists the renames, removals and
   changed behavior since 0.10.0.
 
+## 0.24.1
+
+A fix: a file past its cap is reported as what it is everywhere. No API
+change; evaluation and renders are unchanged.
+
+### Fixed
+
+- **`mochi2d render`, the MCP server's `render`, `NodeRenderer.render`
+  and `npm run render`:** a model file past the file cap (a texture of
+  1.5 GiB, say) failed with `page.evaluate: FileNotFoundError: File not
+  found: "1/…" in models`, as a plain `Error`, where `describe` promised a
+  `FileLimitError`. It now fails with that `FileLimitError` and its
+  `path`, `kind`, `limit` and `size`, on standard error and under
+  `--json`, and in `structuredContent.error`. The same holds for the
+  total cap and for a zip entry past the archive caps.
+- **Every error of ours from the render page keeps its type:** the page
+  sends each one's name and fields with its message, and Node rebuilds the
+  same class by name (one with a name we have no class for keeps its name
+  and fields). No error of ours reaches a caller as `page.evaluate: …`
+  with the name `Error`.
+- **The local server of `npm run render` and `npm run viewer`** streams a
+  model file with its length instead of reading it whole first: a page
+  refuses one past its cap on the length alone. A 1.5 GiB texture took
+  9 s and 1.7 GB of memory in `npm run render`, and 22 s and 4.7 GB in
+  the viewer's server; now under a second and about 100 MB.
+- **A motion sound that can't be read** (missing, or past a cap) is named
+  in the model's `warnings`; it was dropped silently. `describe` says
+  "motion sound not played: FileLimitError: …" for one past a cap, where
+  it said "not found".
+- **The viewer** shows a failed open with the error's name
+  (`Opening folder failed: FileLimitError: …`).
+
 ## 0.24.0
 
 Caps on what a model's textures declare and on its files' own sizes, a

@@ -2,7 +2,7 @@
  * Headless rendering: serves dist/web, opens harness.html in Chromium, renders
  * scenarios offscreen and writes PNGs.
  */
-import { textureErrorFromMessage } from "../../src/core/image/texture-limits.js";
+import { wireErrorFromMessage, withoutWireLine } from "../../src/platform/wire-errors.js";
 import { mkdir, writeFile, access } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { startStaticServer, type RequestHandler } from "./static-server.js";
@@ -166,6 +166,12 @@ export async function openRenderSession(
         { method, args },
       );
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // One of our errors (a texture or file past its cap, a damaged file, a
+      // path not allowed): rethrown as its own type, with its fields.
+      const typed = wireErrorFromMessage(msg);
+      if (typed && typed.name !== "Error") throw typed;
+      if (e instanceof Error) e.message = withoutWireLine(msg);
       if (pageErrors.length) (e as Error).message += ` (page errors: ${pageErrors.join("; ")})`;
       throw e;
     }
@@ -191,13 +197,8 @@ export async function openRenderSession(
         parameters: sc.parameters,
         partOpacities: sc.partOpacities,
       };
-      let r: HarnessResult;
-      try {
-        r = await call<HarnessResult>("render", req);
-      } catch (e) {
-        // A texture the caps refuse: the typed error, never an empty image.
-        throw textureErrorFromMessage(e instanceof Error ? e.message : String(e)) ?? e;
-      }
+      // A texture or file the caps refuse rejects (`call` rethrows it typed), never an empty image.
+      const r = await call<HarnessResult>("render", req);
       return {
         width: r.width,
         height: r.height,

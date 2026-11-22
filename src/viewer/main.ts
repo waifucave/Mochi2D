@@ -931,7 +931,10 @@ async function guarded(what: string, fn: () => Promise<void>): Promise<void> {
     await fn();
   } catch (e) {
     console.error(e);
-    setStatus(`${what} failed: ${e instanceof Error ? e.message : String(e)}`, true);
+    // Our typed errors (a file past its cap, a damaged file) say what they are.
+    const text =
+      e instanceof Error ? (e.name === "Error" ? e.message : `${e.name}: ${e.message}`) : String(e);
+    setStatus(`${what} failed: ${text}`, true);
   }
 }
 

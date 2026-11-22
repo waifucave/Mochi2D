@@ -59,6 +59,7 @@ import type {
   MotionSyncTick,
 } from "../anim/motion-sync/driver.js";
 import { decodeMotionSyncWav } from "../anim/motion-sync/wav.js";
+import { skippedSoundWarning } from "../anim/sound-format.js";
 import type { VoiceProfile } from "../anim/motion-sync/analysis.js";
 
 /** A model parameter as shown to users. */
@@ -637,8 +638,16 @@ export class ModelRuntime {
     let bytes: Uint8Array;
     try {
       bytes = await this.source.read(p);
-    } catch {
+    } catch (e) {
+      // Missing, or past a cap: not played, and said so (once: the result is kept).
       bytes = new Uint8Array(0);
+      const err = e instanceof Error ? e : new Error(String(e));
+      this.warnings.push(
+        skippedSoundWarning(
+          path,
+          err.name === "Error" ? err.message : `${err.name}: ${err.message}`,
+        ),
+      );
     }
     let sound: WavSound | null = null;
     try {

@@ -551,6 +551,10 @@ describe.skipIf(!available)("model renderer on synthetic models (headless Chromi
         texturesBase64: [big],
         alpha: "premultiplied",
       }),
-    ).rejects.toThrow(/TextureTooLarge/);
+    ).rejects.toMatchObject({
+      // The page's error, rebuilt in Node with its name.
+      name: "TextureTooLarge",
+      message: expect.stringMatching(/^texture 0 is 16384×4, larger than the maximum texture size/),
+    });
   });
 });

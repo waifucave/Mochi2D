@@ -55,9 +55,10 @@ describe("the library's entry points", () => {
     const headless = new Set(get("mochi2d/headless").inputs);
     const added = get("mochi2d/node").inputs.filter((i) => !headless.has(i));
     for (const i of added)
-      // fflate's Node build in place of its browser one.
+      // fflate's Node build in place of its browser one; and the renderer's
+      // rebuild of typed errors from its page (pure code, no Node APIs).
       expect(i).toMatch(
-        /^src\/(lib\/node(-render)?|platform\/(node-|png-encode|playwright))|^node_modules\/fflate\//,
+        /^src\/(lib\/node(-render)?|platform\/(node-|png-encode|playwright|wire-errors)|core\/io\/error-wire)|^node_modules\/fflate\//,
       );
   });
 

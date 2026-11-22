@@ -1,7 +1,8 @@
 /**
  * Refusals through the built tools: the `mochi2d` command line and the MCP
  * server on crafted models (a texture past the caps, a texture whose header
- * lies, a zip past the archive caps, a damaged .moc3). A refusal fails the
+ * lies, a texture file past the file cap, a zip past the archive caps, a
+ * damaged .moc3). A refusal fails the
  * command with the error's name and message, its typed fields in --json and
  * in the MCP result, and no output file. Skipped until the tools are built;
  * renders also need dist/web and Playwright's Chromium.
@@ -15,6 +16,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  truncateSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -57,6 +59,8 @@ beforeAll(() => {
   );
   // 312 bytes declaring 30,000²: too little data for its size.
   models.lying = sample("lying", (f) => writeFileSync(texture(f), pngWithData(30000, 30000, 260)));
+  // A texture file of 1.5 GiB (sparse: no disk space), past the 1 GiB file cap.
+  models.sparse = sample("sparse", (f) => truncateSync(texture(f), 1.5 * 2 ** 30));
   // A damaged .moc3: cut in half.
   models.damaged = sample("damaged", (f) => {
     const moc = readFileSync(join(f, "mochi.moc3"));
@@ -136,6 +140,38 @@ describe.skipIf(!built)("the command line", () => {
         path: "mochi.4096/texture_00.png",
       });
       expect(existsSync(out)).toBe(false);
+    },
+    180_000,
+  );
+
+  it.runIf(canRender)(
+    "render: a texture file past the file cap fails with the FileLimitError describe promises",
+    () => {
+      const d = cli(["describe", models.sparse!, "--json"]);
+      expect(d.code).toBe(0);
+      expect(JSON.parse(d.out).warnings.join("\n")).toMatch(
+        /textures: a render would fail: FileLimitError: "mochi\.4096\/texture_00\.png" holds 1610612736 bytes/,
+      );
+      const out = join(dir, "sparse.png");
+      const before = Date.now();
+      const r = cli(["render", models.sparse!, "--out", out, "--json"]);
+      expect(r.code).toBe(1);
+      expect(r.err).toMatch(
+        /^mochi2d: FileLimitError: "mochi\.4096\/texture_00\.png" holds 1610612736 bytes or more, more than the 1073741824 allowed for one file/,
+      );
+      expect(r.err).not.toMatch(/page\.evaluate|not found/);
+      expect(JSON.parse(r.out).error).toEqual({
+        name: "FileLimitError",
+        message:
+          '"mochi.4096/texture_00.png" holds 1610612736 bytes or more, more than the 1073741824 allowed for one file',
+        path: "mochi.4096/texture_00.png",
+        kind: "file",
+        limit: 2 ** 30,
+        size: 1.5 * 2 ** 30,
+      });
+      expect(existsSync(out)).toBe(false);
+      // Refused on its size: nothing is read.
+      expect(Date.now() - before).toBeLessThan(60_000);
     },
     180_000,
   );
@@ -246,6 +282,27 @@ describe.skipIf(!built)("the MCP server", () => {
         name: "TextureLimitError",
         kind: "side",
         width: 20000,
+      });
+    },
+    180_000,
+  );
+
+  it.runIf(canRender)(
+    "render: a texture file past the file cap fails with its FileLimitError",
+    async () => {
+      expect((await call("load_model", { path: models.sparse })).isError).toBeFalsy();
+      const r = await call("render", { width: 64, height: 64 });
+      expect(r.isError).toBe(true);
+      expect(r.content.some((c) => c.type === "image")).toBe(false);
+      expect(text(r)).toMatch(
+        /^FileLimitError: "mochi\.4096\/texture_00\.png" holds 1610612736 bytes/,
+      );
+      expect(r.structuredContent!.error).toMatchObject({
+        name: "FileLimitError",
+        path: "mochi.4096/texture_00.png",
+        kind: "file",
+        limit: 2 ** 30,
+        size: 1.5 * 2 ** 30,
       });
     },
     180_000,

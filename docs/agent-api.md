@@ -156,7 +156,10 @@ loaded: call load_model first.`), and `structuredContent.error`: its
 `code`), so an agent can tell "too large" (`ArchiveLimitError`,
 `TextureLimitError`, `FileLimitError`) from "damaged" (`ZipFormatError`,
 `TextureFormatError`, `MocFormatError`) from "missing" (`FileNotFoundError`).
-Nothing is rendered past a cap: `render` returns no image.
+Nothing is rendered past a cap: `render` returns no image. `render`
+reports the same error as `load_model` and `describe` do, with the same
+fields: a texture file past the file cap is a `FileLimitError` from
+`render` too, never "not found".
 
 **`list_models`.** The allowed folders, and the `*.model3.json` files
 (`kind: "settings"`) and `.zip` archives (`kind: "zip"`) in them: at most

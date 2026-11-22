@@ -25,6 +25,16 @@ was added without breaking callers: see `CHANGELOG.md`.
 
 ## Behavior
 
+### 0.24.1
+
+- **A render's errors keep their type:** `NodeRenderer.render`,
+  `mochi2d render` and the MCP `render` reject with our typed errors
+  (`FileLimitError`, `ArchiveLimitError`, `ZipFormatError`, …) where a
+  plain `Error` with a `page.evaluate:` prefix escaped before, without
+  the model's settings path in front. The error's name is its `name`,
+  no longer inside its message: match `name`. A motion sound that can't
+  be read is now a warning.
+
 ### 0.24.0
 
 - **Textures are capped by what they declare** (`DEFAULT_TEXTURE_LIMITS`):
