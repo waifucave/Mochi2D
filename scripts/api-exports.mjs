@@ -22,7 +22,10 @@ const GROUPS = [
   ["Views and models in the browser", ["lib/view", "lib/model", "lib/sources", "lib/speech"]],
   ["Items", ["lib/item"]],
   ["PixiJS", ["lib/pixi"]],
-  ["Input, gestures and textures", ["lib/gestures", "lib/texture-budget"]],
+  [
+    "Input, gestures and textures",
+    ["lib/gestures", "lib/texture-budget", "core/image/texture-limits"],
+  ],
   [
     "Live audio and lip sync",
     ["lib/live-lip-sync", "platform/live-audio", "anim/live-lip-sync", "anim/lip-sync"],

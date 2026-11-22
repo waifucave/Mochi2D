@@ -31,6 +31,13 @@
  * include it.
  */
 import type { ArchiveLimits } from "../runtime/zip-source.js";
+import type { FileLimits } from "../core/io/file-limits.js";
+import type { TextureLimits } from "../core/image/texture-limits.js";
+import {
+  skippedSoundReason,
+  skippedSoundWarning,
+  type SoundOptions,
+} from "../anim/sound-format.js";
 import {
   CanvasSource,
   Container,
@@ -81,6 +88,23 @@ export interface MochiSpriteOptions {
    * `{ maxEntryBytes, maxTotalBytes, maxEntries }`.
    */
   archive?: ArchiveLimits;
+  /**
+   * Caps on the files read from a folder, a drop or a URL, a zip included
+   * (default `DEFAULT_FILE_LIMITS`): `{ maxFileBytes, maxTotalBytes }`. A
+   * download is streamed and stopped at the cap.
+   */
+  files?: FileLimits;
+  /**
+   * Caps on what the model's textures may declare (default
+   * `DEFAULT_TEXTURE_LIMITS`): `{ maxSide, maxPixels, maxTotalPixels }`.
+   */
+  textures?: TextureLimits;
+  /**
+   * How the model's motion sounds play (default: only WAV files;
+   * `{ compressed: true }` for models you trust). Sounds that won't play are
+   * named in the model's `warnings`.
+   */
+  sounds?: SoundOptions;
   /**
    * Where the model is drawn: "shared" draws on the Pixi renderer's WebGL
    * context into a Pixi texture; "own" draws in a WebGL context of the
@@ -313,7 +337,7 @@ export class MochiSprite extends Container implements ModelHost {
           preserveDrawingBuffer: true,
         });
     if (!gl) throw new Error("WebGL 2 is not available for the model");
-    const opened = await openModelInput(input, options.settings, options.archive);
+    const opened = await openModelInput(input, options.settings, options.archive, options.files);
     const profile = deviceProfile();
     // The sprite exists before the runtime so that motion sounds play through it.
     let sprite: MochiSprite | null = null;
@@ -324,11 +348,14 @@ export class MochiSprite extends Container implements ModelHost {
       live = await loadLiveModel(gl, opened.source, opened.settingsPath, {
         textureBudget: resolveTextureBudget(options.textureBudget ?? "auto", profile).bytes,
         ...(profile.constrained ? { decodeWorkers: 1 } : {}),
+        ...(options.textures ? { textures: options.textures } : {}),
+        ...(options.sounds ? { sounds: options.sounds } : {}),
         masks: MASKS[options.masks ?? "atlas"],
         fit: 1,
         runtime: {
           ...options.runtime,
-          onSound: (_path, bytes) => (sprite ? sprite.playMotionSound(bytes) : () => null),
+          onSound: (path, bytes) =>
+            sprite ? sprite.playMotionSound(bytes, path, options.sounds) : () => null,
         },
       });
       if (share) share.enter();
@@ -423,6 +450,7 @@ export class MochiSprite extends Container implements ModelHost {
         return loadLiveModel(gl, from.runtime.source, from.runtime.settingsPath, {
           reuse: from.runtime,
           textureBudget: this.reloadOptions.textureBudget,
+          ...(from.textureLimits ? { textures: from.textureLimits } : {}),
           masks: from.masks,
           fit: 1,
         });
@@ -692,14 +720,28 @@ export class MochiSprite extends Container implements ModelHost {
     this.attach();
   }
 
-  private playMotionSound(bytes: Uint8Array): () => number | null {
+  /** @internal A motion's sound; one that won't play is named in the model's warnings. */
+  playMotionSound(bytes: Uint8Array, path: string, sounds?: SoundOptions): () => number | null {
+    const skip = (reason: string) => {
+      const w = skippedSoundWarning(path, reason);
+      const list = this.model.live.runtime.warnings;
+      if (!list.includes(w)) list.push(w);
+    };
+    const reason = skippedSoundReason(bytes, sounds);
+    if (reason) {
+      skip(reason);
+      return () => null;
+    }
     let playback: SpeechPlayback | null = null;
     let failed = false;
     void (async () => {
       try {
-        const p = await this.speech.prepare(bytes);
+        const p = await this.speech.prepare(bytes, { wavOnly: !sounds?.compressed });
         if (p.buffer) playback = this.speech.play(p.buffer);
-        else failed = true;
+        else {
+          failed = true;
+          skip("the browser could not decode it");
+        }
       } catch {
         failed = true;
       }

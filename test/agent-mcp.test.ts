@@ -294,6 +294,10 @@ describe.skipIf(!built)("the MCP server", () => {
         motionGroups: [],
         physics: true,
         time: 0,
+        // What each texture declares, read from its header.
+        textures: expect.arrayContaining([
+          expect.objectContaining({ width: 8192, height: 8192, format: "png" }),
+        ]),
         warnings: [],
       });
       const d = data(await s.call("describe_model"));
@@ -769,7 +773,9 @@ describe.skipIf(!built || !HAVE_DEEPSEEK)("the MCP server where rendering is not
         MOCHI2D_CHROMIUM: join(tmp, "no-chromium"),
       }),
     );
-    expect(message).toMatch(/^Rendering needs headless Chromium through Playwright/);
+    expect(message).toMatch(
+      /^RenderUnavailable: Rendering needs headless Chromium through Playwright/,
+    );
     expect(message).toMatch(/npx playwright install chromium/);
     expect(message).toMatch(/Everything else works without it\.$/);
   });

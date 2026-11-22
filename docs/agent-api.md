@@ -147,9 +147,16 @@ holds one model at a time: `load_model` replaces it.
 
 Every result is JSON, in both `structuredContent` and a text item. `render`
 also returns an `image` item (`image/png`, base64), so the agent can see
-the result. A tool that fails returns `isError: true` and a message, for
-example `No model is loaded: call load_model first.`, a path outside the
-allowed folders, an unknown motion group, or arguments outside the schema.
+the result. A tool that fails returns `isError: true`, a text item with the
+error's name and message (`TextureLimitError: "t.png" declares 30000×30000
+pixels, …`; a plain message for a plain error, for example `No model is
+loaded: call load_model first.`), and `structuredContent.error`: its
+`name`, `message` and, for the typed errors, their fields (`path`, `kind`,
+`limit`, `size`, a texture's `width` and `height`, a format error's
+`code`), so an agent can tell "too large" (`ArchiveLimitError`,
+`TextureLimitError`, `FileLimitError`) from "damaged" (`ZipFormatError`,
+`TextureFormatError`, `MocFormatError`) from "missing" (`FileNotFoundError`).
+Nothing is rendered past a cap: `render` returns no image.
 
 **`list_models`.** The allowed folders, and the `*.model3.json` files
 (`kind: "settings"`) and `.zip` archives (`kind: "zip"`) in them: at most
@@ -173,7 +180,15 @@ parameters you set, motions and expressions pose the model.
 
 The summary has `path`, `settings`, `mocVersion`, the counts of
 `parameters`, `parts` and `drawables`, `expressions` (how many the settings
-name), `motionGroups`, `physics`, `time` and `warnings`.
+name), `motionGroups`, `physics`, `time`, `textures` and `warnings`:
+
+- `textures`: what each texture declares, read from its header (nothing is
+  decoded): `path`, `width`, `height`, `format`;
+- `texturesRefused` (only when there is one): the error a render would
+  meet under the default caps, as in a failed result;
+- `warnings`: the runtime's, the motion sounds a view would not play (their
+  files are read, and each one named with the reason), and a line for a
+  refusal of the textures.
 
 **`describe_model`.** The loaded model:
 
@@ -402,6 +417,14 @@ MCP tool.
 Exit codes: 0 success; 1 failure (an invalid `.moc3` for `validate`, unknown
 IDs for `params`, or any error); 2 a usage error; 3 rendering is not
 possible here.
+
+A failure prints `mochi2d: <name>: <message>` on stderr (the message alone
+for a plain error), and with `--json` also `{ "error": { … } }` on stdout,
+with the fields of the MCP results above. A render that fails writes no
+file. `describe` prints the textures' declared sizes and, under
+`warnings`, a refusal a render would meet and the motion sounds a view
+would skip; `params` and `hit-test` decode no texture and are not affected
+by the texture caps.
 
 ```sh
 mochi2d describe assets/models/DeepSeek

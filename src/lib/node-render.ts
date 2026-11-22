@@ -26,6 +26,12 @@ import { readFile, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FileSource } from "../core/io/file-source.js";
+import type { FileLimits } from "../core/io/file-limits.js";
+import {
+  resolveTextureLimits,
+  textureErrorFromMessage,
+  type TextureLimits,
+} from "../core/image/texture-limits.js";
 import { resolveSettingsPath } from "../runtime/bundle.js";
 import { rejectUnsupportedArchive } from "../runtime/zip-source.js";
 import type { ModelRuntime } from "../runtime/model-runtime.js";
@@ -50,6 +56,17 @@ export interface NodeRendererOptions extends LaunchOptions {
 export type RenderInput = ModelRuntime | string | { source: FileSource; settings?: string };
 
 export interface RenderImageOptions {
+  /**
+   * Caps on the files read for a model given as a path (default
+   * `DEFAULT_FILE_LIMITS`): `{ maxFileBytes, maxTotalBytes }`.
+   */
+  files?: FileLimits;
+  /**
+   * Caps on what the model's textures may declare (default
+   * `DEFAULT_TEXTURE_LIMITS`), checked from their headers before anything is
+   * decoded. A texture past one rejects with `TextureLimitError`.
+   */
+  textures?: TextureLimits;
   /** Image size in pixels. Default 1024 × 1024. */
   width?: number;
   height?: number;
@@ -130,18 +147,21 @@ function defaultWebDir(): string {
   return candidates.find((d) => existsSync(join(d, "harness.html"))) ?? candidates[0]!;
 }
 
-async function sourceFor(input: RenderInput): Promise<{ source: FileSource; settings: string }> {
+async function sourceFor(
+  input: RenderInput,
+  files?: FileLimits,
+): Promise<{ source: FileSource; settings: string }> {
   if (typeof input === "string") {
     rejectUnsupportedArchive(basename(input));
     if (input.toLowerCase().endsWith(".zip")) {
-      const source = await sourceFromZipFile(input);
+      const source = await sourceFromZipFile(input, undefined, files);
       return { source, settings: resolveSettingsPath(source) };
     }
     if ((await stat(input)).isDirectory()) {
-      const source = await sourceFromFolder(input);
+      const source = await sourceFromFolder(input, files);
       return { source, settings: resolveSettingsPath(source) };
     }
-    return { source: await sourceFromFolder(dirname(input)), settings: basename(input) };
+    return { source: await sourceFromFolder(dirname(input), files), settings: basename(input) };
   }
   if ("animator" in input) return { source: input.source, settings: input.settingsPath };
   return { source: input.source, settings: resolveSettingsPath(input.source, input.settings) };
@@ -276,7 +296,7 @@ export class NodeRenderer {
         `${runtime.settingsPath}: this runtime's model was given as a built model (withModel), ` +
           "which no file holds; make it with withData(bytes) or withData(data, version) to render it",
       );
-    const { source, settings } = await sourceFor(input);
+    const { source, settings } = await sourceFor(input, o.files);
     try {
       return await this.renderSource(input, o, source, settings);
     } finally {
@@ -336,6 +356,13 @@ export class NodeRenderer {
       ...(o.background ? { background: o.background } : {}),
       ...(o.view ? { view: o.view } : {}),
       ...(fast ? { fast } : {}),
+      // JSON has no Infinity: null turns a cap off.
+      textureLimits: Object.fromEntries(
+        Object.entries(resolveTextureLimits(o.textures)).map(([k, v]) => [
+          k,
+          v === Infinity ? null : v,
+        ]),
+      ),
     };
     this.errors.length = 0;
     let r: HarnessResult;
@@ -351,6 +378,9 @@ export class NodeRenderer {
       );
     } catch (e) {
       const msg = (e instanceof Error ? e.message : String(e)).replace(/^page\.evaluate: /, "");
+      // A texture the caps refuse: the same typed error a page gets.
+      const refused = textureErrorFromMessage(msg);
+      if (refused) throw refused;
       throw new Error(
         `${settings}: ${msg.split("\n")[0]}${this.errors.length ? ` (${this.errors.join("; ")})` : ""}`,
       );

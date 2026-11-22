@@ -1,5 +1,6 @@
 /** Browser implementations of {@link FileSource}: picked folders, dropped files, zips and URLs. */
 import { FileNotFoundError, normalizePath, type FileSource } from "../core/io/file-source.js";
+import { FileBudget, readResponse, type FileLimits } from "../core/io/file-limits.js";
 import {
   archiveKind,
   rejectUnsupportedArchive,
@@ -9,32 +10,53 @@ import {
 
 export { sourceFromZip };
 
-/** Files with their relative paths, e.g. from `<input webkitdirectory>` or a drop. */
+/**
+ * Files with their relative paths, e.g. from `<input webkitdirectory>` or a
+ * drop, read within the caps `limits` (by default `DEFAULT_FILE_LIMITS`): a
+ * file's known size is checked before it is read.
+ */
 export class BrowserFileSource implements FileSource {
   private readonly files = new Map<string, File>();
+  private readonly budget: FileBudget;
   constructor(
     readonly label: string,
     entries: Iterable<[string, File]>,
+    limits?: FileLimits,
   ) {
+    this.budget = new FileBudget(limits);
     for (const [p, f] of entries) this.files.set(normalizePath(p), f);
   }
   list(): readonly string[] {
     return [...this.files.keys()].sort();
   }
   async read(path: string): Promise<Uint8Array> {
-    const f = this.files.get(normalizePath(path));
+    const key = normalizePath(path);
+    const f = this.files.get(key);
     if (!f) throw new FileNotFoundError(path, this.label);
-    return new Uint8Array(await f.arrayBuffer());
+    this.budget.check(key, f.size);
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    this.budget.add(key, bytes.length);
+    return bytes;
   }
 }
 
-/** Builds a source from an `<input type=file webkitdirectory>` FileList. */
-export function sourceFromFileList(list: FileList | File[]): FileSource {
+/** A single `File` or `Blob` read whole, within `limits` (its size is checked first). */
+export async function readFileCapped(
+  file: Blob,
+  name: string,
+  limits?: FileLimits,
+): Promise<Uint8Array> {
+  new FileBudget(limits).check(name, file.size);
+  return new Uint8Array(await file.arrayBuffer());
+}
+
+/** Builds a source from an `<input type=file webkitdirectory>` FileList, read within `limits`. */
+export function sourceFromFileList(list: FileList | File[], limits?: FileLimits): FileSource {
   const files = [...list];
   if (files.length === 1) rejectUnsupportedArchive(files[0]!.name);
   const entries: [string, File][] = files.map((f) => [f.webkitRelativePath || f.name, f]);
   const label = commonRoot(entries.map(([p]) => p)) || "selected files";
-  return new BrowserFileSource(label, entries);
+  return new BrowserFileSource(label, entries, limits);
 }
 
 function commonRoot(paths: string[]): string {
@@ -51,6 +73,7 @@ function commonRoot(paths: string[]): string {
 export async function sourceFromDataTransfer(
   dt: DataTransfer,
   archive?: ArchiveLimits,
+  files?: FileLimits,
 ): Promise<FileSource> {
   const entries: [string, File][] = [];
   const roots = [...dt.items]
@@ -67,10 +90,10 @@ export async function sourceFromDataTransfer(
     const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
     rejectUnsupportedArchive(file.name, head);
     if (archiveKind(file.name, head) === "zip")
-      return sourceFromZip(file.name, new Uint8Array(await file.arrayBuffer()), archive);
+      return sourceFromZip(file.name, await readFileCapped(file, file.name, files), archive);
   }
   const label = commonRoot(entries.map(([p]) => p)) || "dropped files";
-  return new BrowserFileSource(label, entries);
+  return new BrowserFileSource(label, entries, files);
 }
 
 async function walkEntry(
@@ -96,14 +119,21 @@ async function walkEntry(
   }
 }
 
-/** Files fetched relative to a base URL. Cannot enumerate its contents. */
+/**
+ * Files fetched relative to a base URL, within the caps `limits` (by default
+ * `DEFAULT_FILE_LIMITS`): each download is streamed and stopped at the cap.
+ * Cannot enumerate its contents.
+ */
 export class HttpFileSource implements FileSource {
   readonly baseUrl: string;
+  private readonly budget: FileBudget;
   constructor(
     baseUrl: string,
     readonly label = baseUrl,
+    limits?: FileLimits,
   ) {
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
+    this.budget = new FileBudget(limits);
   }
   list(): undefined {
     return undefined;
@@ -116,7 +146,7 @@ export class HttpFileSource implements FileSource {
     const res = await fetch(url);
     if (res.status === 404) throw new FileNotFoundError(path, this.label);
     if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
-    return new Uint8Array(await res.arrayBuffer());
+    return readResponse(res, normalizePath(path), this.budget);
   }
 }
 
@@ -128,22 +158,21 @@ export class HttpFileSource implements FileSource {
 export async function sourceFromUrl(
   url: string,
   archive?: ArchiveLimits,
+  files?: FileLimits,
 ): Promise<{ source: FileSource; entry?: string }> {
   const u = new URL(url, location.href);
   rejectUnsupportedArchive(decodeURIComponent(u.pathname.split("/").pop() ?? ""));
   if (u.pathname.toLowerCase().endsWith(".zip")) {
     const res = await fetch(u);
     if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${u}`);
+    const name = decodeURIComponent(u.pathname.split("/").pop()!);
+    // The archive's download is streamed and stopped at the file cap.
     return {
-      source: sourceFromZip(
-        decodeURIComponent(u.pathname.split("/").pop()!),
-        new Uint8Array(await res.arrayBuffer()),
-        archive,
-      ),
+      source: sourceFromZip(name, await readResponse(res, name, new FileBudget(files)), archive),
     };
   }
   const slash = u.href.lastIndexOf("/");
   const base = u.href.slice(0, slash + 1);
   const entry = decodeURIComponent(u.href.slice(slash + 1).split(/[?#]/)[0]!);
-  return { source: new HttpFileSource(base), entry: entry || undefined };
+  return { source: new HttpFileSource(base, base, files), entry: entry || undefined };
 }

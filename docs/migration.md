@@ -25,6 +25,33 @@ was added without breaking callers: see `CHANGELOG.md`.
 
 ## Behavior
 
+### 0.24.0
+
+- **Textures are capped by what they declare** (`DEFAULT_TEXTURE_LIMITS`):
+  16,384 on a side, 268 million pixels per texture, 1,074 million per
+  model. Past a cap, loading throws `TextureLimitError` before decoding.
+  Pass `textures` with a larger cap, or `Infinity`, to load more.
+- **Texture formats:** PNG, JPEG, WebP, GIF, BMP and ICO load as before,
+  their sizes read from their headers. A texture in another format (AVIF or
+  HEIF, TIFF, JPEG XL), which the browser may have decoded before, now
+  throws `TextureFormatError`: convert it to PNG.
+- **A texture that fails to decode, or whose file is too short for the
+  size it declares,** throws `TextureFormatError` where a plain `Error`
+  ("Image decode failed") escaped before, or where a truncated file
+  decoded before.
+- **Files from folders, URLs and drops are capped** (`DEFAULT_FILE_LIMITS`):
+  1 GiB a file, 2 GiB in all; past a cap, `FileLimitError`. The settings
+  or `.moc3` past a cap fail the load; an optional file is left out with a
+  warning. Pass `files` to change them.
+- **A model's own motion sounds** play only when they are WAV files, unless
+  the view is given `sounds: { compressed: true }`; every skipped sound is
+  named in the model's `warnings`. `speak()` is unchanged.
+- **The command line and the MCP server** report a failure with its name
+  (`mochi2d: TextureLimitError: …`, an MCP text item `TextureLimitError:
+  …`) and its typed fields (`--json`, `structuredContent.error`); a script
+  that matched the bare message needs to allow the prefix. `describe` and
+  `load_model` have a new `textures` field.
+
 ### 0.23.0
 
 - **Zip archives are capped** by default (`DEFAULT_ARCHIVE_LIMITS`): an

@@ -11,6 +11,7 @@
  * and nothing goes to the network; renders use headless Chromium on a local
  * page.
  */
+import { errorFields, errorLine } from "./lib/agent/errors.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { RootsListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -74,8 +75,10 @@ const ok = (value: Record<string, unknown>, extra: Content[] = []) => ({
   structuredContent: value,
 });
 
+/** An error result: its name and message, and its typed fields (errors.ts) as structured content. */
 const fail = (e: unknown) => ({
-  content: [{ type: "text" as const, text: e instanceof Error ? e.message : String(e) }],
+  content: [{ type: "text" as const, text: errorLine(e) }],
+  structuredContent: { error: errorFields(e) },
   isError: true,
 });
 

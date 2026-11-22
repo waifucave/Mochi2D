@@ -5,6 +5,7 @@
  * every check, so a link inside a root cannot reach outside it. Nothing is
  * written, and nothing is read from the network.
  */
+import { FileBudget } from "../../../src/core/io/file-limits.js";
 import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import {
@@ -30,7 +31,7 @@ export class PathNotAllowedError extends Error {
 }
 
 /** The largest model folder walked (files), the deepest level, and the largest file read. */
-export const LIMITS = { files: 20000, depth: 12, fileBytes: 1 << 30 };
+export const LIMITS = { files: 20000, depth: 12 };
 
 /** The folders the agent interface may read from (real paths). */
 export class AllowedRoots {
@@ -92,6 +93,8 @@ export class AllowedRoots {
 
 /** A model folder on disk that reads nothing outside the allowed roots. */
 export class GuardedFolderSource implements FileSource {
+  /** What the source has read, within the default file caps (DEFAULT_FILE_LIMITS). */
+  private readonly budget = new FileBudget();
   private constructor(
     readonly root: string,
     private readonly roots: AllowedRoots,
@@ -153,9 +156,10 @@ export class GuardedFolderSource implements FileSource {
       throw new FileNotFoundError(path, this.label);
     }
     if (!this.roots.contains(real)) throw new FileNotFoundError(path, this.label);
-    const st = await stat(real);
-    if (st.size > LIMITS.fileBytes) throw new Error(`${path} is larger than 1 GiB.`);
+    const key = normalizePath(path);
+    this.budget.check(key, (await stat(real)).size);
     const buf = await readFile(real);
+    this.budget.add(key, buf.byteLength);
     return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
   }
 }
@@ -246,7 +250,7 @@ export async function openModelLocation(roots: AllowedRoots, path: string): Prom
     return { source: await GuardedFolderSource.open(real, roots), path: real, kind: "folder" };
   const name = basename(real).toLowerCase();
   if (name.endsWith(".zip")) {
-    if (st.size > LIMITS.fileBytes) throw new Error(`${real} is larger than 1 GiB.`);
+    new FileBudget().check(basename(real), st.size);
     const buf = await readFile(real);
     const source = sourceFromZip(
       basename(real),
@@ -274,7 +278,7 @@ export async function readAllowedFile(
   const real = await roots.resolve(path);
   const st = await stat(real);
   if (!st.isFile()) throw new Error(`${real} is not a file.`);
-  if (st.size > LIMITS.fileBytes) throw new Error(`${real} is larger than 1 GiB.`);
+  new FileBudget().check(basename(real), st.size);
   const buf = await readFile(real);
   return { path: real, bytes: new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength) };
 }

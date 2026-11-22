@@ -45,6 +45,7 @@ import {
   type RenderBenchResult,
 } from "./render-bench.js";
 import type { Texture2D } from "../render/gl/texture.js";
+import { textureErrorForWire, type TextureLimits } from "../core/image/texture-limits.js";
 
 export interface HarnessRequest {
   width: number;
@@ -90,7 +91,24 @@ export interface HarnessRequest {
    * the viewer's mask atlas instead of per-drawable masks.
    */
   fast?: { maxTextureSize?: number };
+  /**
+   * Caps on what the model's textures may declare (default
+   * `DEFAULT_TEXTURE_LIMITS`); null turns a cap off (JSON has no Infinity).
+   */
+  textureLimits?: WireTextureLimits;
 }
+
+/** {@link TextureLimits} as JSON: null for a cap turned off. */
+export type WireTextureLimits = { [K in keyof TextureLimits]?: number | null };
+
+const fromWire = (w: WireTextureLimits | undefined): TextureLimits => {
+  const out: TextureLimits = {};
+  for (const k of ["maxSide", "maxPixels", "maxTotalPixels"] as const) {
+    const v = w?.[k];
+    if (v !== undefined) out[k] = v === null ? Infinity : v;
+  }
+  return out;
+};
 
 export interface HarnessResult {
   width: number;
@@ -199,7 +217,11 @@ interface LoadedForRender {
   textures: Texture2D[];
   release: () => void;
 }
-let loadedCache: (LoadedForRender & { maxTextureSize: number; nonFinite: boolean }) | null = null;
+let loadedCache:
+  (LoadedForRender & { maxTextureSize: number; nonFinite: boolean; limitsKey: string }) | null =
+  null;
+/** The texture caps of the request being served. */
+let requestLimits: TextureLimits = {};
 let rendererCache: {
   path: string;
   maskSize: number;
@@ -218,10 +240,12 @@ async function loadedFor(
   maxTextureSize = 0,
   nonFinite = false,
 ): Promise<LoadedForRender> {
+  const limitsKey = JSON.stringify(requestLimits, (_k, v) => (v === Infinity ? "inf" : v));
   if (
     loadedCache?.path === path &&
     loadedCache.maxTextureSize === maxTextureSize &&
-    loadedCache.nonFinite === nonFinite
+    loadedCache.nonFinite === nonFinite &&
+    loadedCache.limitsKey === limitsKey
   )
     return loadedCache;
   rendererCache?.renderer.dispose();
@@ -240,13 +264,20 @@ async function loadedFor(
     path,
     loaded.settings,
     maxTextureSize > 0
-      ? { exact: true, mipmaps: true, oversize: "downscale", maxSize: maxTextureSize }
-      : { exact: true, mipmaps: true, oversize: "fail" },
+      ? {
+          exact: true,
+          mipmaps: true,
+          oversize: "downscale",
+          maxSize: maxTextureSize,
+          limits: requestLimits,
+        }
+      : { exact: true, mipmaps: true, oversize: "fail", limits: requestLimits },
   );
   loadedCache = {
     path,
     maxTextureSize,
     nonFinite,
+    limitsKey,
     model: loaded.model,
     textures: textures.map((t) => t.texture),
     release: () => {
@@ -290,7 +321,24 @@ async function rendererFor(
   return { model: loaded.model, renderer: rendererCache.renderer };
 }
 
+/**
+ * {@link renderImage} with the request's texture caps. A texture they refuse
+ * rejects with its fields on a marked line (`textureErrorForWire`), so a
+ * caller in Node can rethrow the same typed error; no caller can take a
+ * refusal for an image.
+ */
 async function render(req: HarnessRequest): Promise<HarnessResult> {
+  requestLimits = fromWire(req.textureLimits);
+  try {
+    return await renderImage(req);
+  } catch (e) {
+    throw textureErrorForWire(e);
+  } finally {
+    requestLimits = {};
+  }
+}
+
+async function renderImage(req: HarnessRequest): Promise<HarnessResult> {
   const alpha = req.alpha ?? "straight";
   const notes: string[] = [];
   const extra: Partial<HarnessResult> = {};
@@ -308,7 +356,12 @@ async function render(req: HarnessRequest): Promise<HarnessResult> {
       // A test model given as bytes: loaded, drawn and released within this call.
       const maskSize = req.maskSize ?? REFERENCE_MASK_SIZE;
       const model = loadMoc(fromBase64(req.mocBase64), loadOptions(req));
-      const loader = new TextureLoader(gl, { exact: true, mipmaps: true, oversize: "fail" });
+      const loader = new TextureLoader(gl, {
+        exact: true,
+        mipmaps: true,
+        oversize: "fail",
+        limits: requestLimits,
+      });
       try {
         const textures = await loader.loadSet(
           (req.texturesBase64 ?? []).map((b, i) => ({

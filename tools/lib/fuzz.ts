@@ -34,6 +34,12 @@ import {
 import { FileNotFoundError, MemoryFileSource } from "../../src/core/io/file-source.js";
 import { ModelRuntime } from "../../src/runtime/model-runtime.js";
 import { Synth } from "../../test/support/synth.js";
+import { craftHeader, craftPng } from "../../test/support/texture-bombs.js";
+import {
+  checkTextures,
+  TextureFormatError,
+  TextureLimitError,
+} from "../../src/core/image/texture-limits.js";
 
 // ----------------------------------------------------------------- random
 
@@ -676,6 +682,31 @@ export const TARGETS: readonly FuzzTarget[] = [
   zipTarget("zip", {}),
   // Caps small enough that the seeds' own entries meet them.
   zipTarget("zip-capped", { maxEntryBytes: 400, maxTotalBytes: 700, maxEntries: 4 }),
+  {
+    // Texture headers, read before anything is decoded, under small caps.
+    name: "texture-header",
+    allowed: [TextureFormatError, TextureLimitError],
+    seeds: () => [
+      craftPng({ width: 64, height: 32 }),
+      craftPng({ width: 300, height: 5, fill: "noise" }),
+      craftPng({ width: 4096, height: 4096 }),
+      craftPng({ width: 16, height: 16, colorType: 6 }),
+      craftHeader("jpeg", 64, 48, 64),
+      craftHeader("jpeg-progressive", 64, 48),
+      craftHeader("webp", 64, 48),
+      craftHeader("webp-lossless", 64, 48),
+      craftHeader("gif", 64, 48),
+      craftHeader("bmp", 8, 4, 128),
+      craftHeader("ico", 32, 32),
+    ],
+    mutate: byteMutation,
+    run: (b) =>
+      void checkTextures([{ path: "t.png", bytes: b }], {
+        maxSide: 8192,
+        maxPixels: 2 ** 24,
+        maxTotalPixels: 2 ** 24,
+      }),
+  },
   {
     name: "wav",
     allowed: [WavFormatError, MotionSyncAudioError],

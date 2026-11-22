@@ -16,6 +16,7 @@ import { basename, dirname } from "node:path";
 import { ModelRuntime, type RuntimeOptions } from "../runtime/model-runtime.js";
 import { sourceFromFolder, sourceFromZipFile } from "../platform/node-sources.js";
 import { rejectUnsupportedArchive, type ArchiveLimits } from "../runtime/zip-source.js";
+import type { FileLimits } from "../core/io/file-limits.js";
 import { resultModelFromSource, type ResultModel } from "../conformance/results.js";
 
 export * from "./headless.js";
@@ -32,21 +33,26 @@ export { encodePngRgba } from "../platform/node-png.js";
 /**
  * Loads a model from disk: a `*.model3.json` file (with its folder), a model
  * folder (its shallowest `*.model3.json`), or a `.zip` archive, read within
- * the caps `archive` (default `DEFAULT_ARCHIVE_LIMITS`). RAR and 7z archives
- * are rejected with {@link UnsupportedArchiveError}.
+ * the caps `archive` (default `DEFAULT_ARCHIVE_LIMITS`), its files (the zip
+ * included) within the caps `files` (default `DEFAULT_FILE_LIMITS`). RAR and
+ * 7z archives are rejected with {@link UnsupportedArchiveError}.
  */
 export async function loadModelFromDisk(
   path: string,
-  options: RuntimeOptions & { settings?: string; archive?: ArchiveLimits } = {},
+  options: RuntimeOptions & {
+    settings?: string;
+    archive?: ArchiveLimits;
+    files?: FileLimits;
+  } = {},
 ): Promise<ModelRuntime> {
-  const { settings, archive, ...runtime } = options;
+  const { settings, archive, files, ...runtime } = options;
   rejectUnsupportedArchive(basename(path));
   if (path.toLowerCase().endsWith(".zip"))
-    return ModelRuntime.load(await sourceFromZipFile(path, archive), settings, runtime);
+    return ModelRuntime.load(await sourceFromZipFile(path, archive, files), settings, runtime);
   if ((await stat(path)).isDirectory())
-    return ModelRuntime.load(await sourceFromFolder(path), settings, runtime);
+    return ModelRuntime.load(await sourceFromFolder(path, files), settings, runtime);
   return ModelRuntime.load(
-    await sourceFromFolder(dirname(path)),
+    await sourceFromFolder(dirname(path), files),
     settings ?? basename(path),
     runtime,
   );

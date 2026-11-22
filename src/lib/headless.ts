@@ -61,6 +61,21 @@ export type {
   ZipNameEncoding,
 } from "../runtime/zip-source.js";
 export {
+  DEFAULT_TEXTURE_LIMITS,
+  TextureFormatError,
+  TextureLimitError,
+  readTextureHeader,
+} from "../core/image/texture-limits.js";
+export type {
+  TextureHeader,
+  TextureLimitKind,
+  TextureLimits,
+} from "../core/image/texture-limits.js";
+export { soundFormat } from "../anim/sound-format.js";
+export { DEFAULT_FILE_LIMITS, FileLimitError } from "../core/io/file-limits.js";
+export type { FileLimitKind, FileLimits } from "../core/io/file-limits.js";
+export type { SoundFormat, SoundOptions } from "../anim/sound-format.js";
+export {
   FileNotFoundError,
   MemoryFileSource,
   OverlayFileSource,

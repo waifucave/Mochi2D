@@ -8,6 +8,13 @@
  * Files are read only under the allowed roots (./paths.ts); nothing is
  * written, and nothing goes to the network. One model is loaded at a time.
  */
+import {
+  motionSounds,
+  skippedSoundReason,
+  skippedSoundWarning,
+} from "../../../src/anim/sound-format.js";
+import { checkTextures, readTextureHeader } from "../../../src/core/image/texture-limits.js";
+import { errorFields } from "./errors.js";
 import { ModelRuntime } from "../../../src/runtime/model-runtime.js";
 import type { EffectName } from "../../../src/runtime/model-runtime.js";
 import type { FileSource } from "../../../src/core/io/file-source.js";
@@ -72,6 +79,64 @@ interface Loaded {
   options: LoadOptions;
   generation: number;
   time: number;
+  textures: TextureReport;
+  /** Diagnostics for the motion sounds a view would not play (read from the files). */
+  sounds: string[];
+}
+
+/** The model's motion sounds that a view would skip, by default options, and why. */
+async function soundReport(rt: ModelRuntime): Promise<string[]> {
+  const out: string[] = [];
+  for (const s of motionSounds(rt.settings)) {
+    let bytes: Uint8Array;
+    try {
+      bytes = await rt.source.read(rt.resolve(s));
+    } catch (e) {
+      out.push(`${s}: motion sound not found (${e instanceof Error ? e.message : String(e)})`);
+      continue;
+    }
+    const reason = skippedSoundReason(bytes);
+    if (reason) out.push(skippedSoundWarning(s, reason) + " (in a view)");
+  }
+  return out;
+}
+
+/** What a model's textures declare, and the error a render would refuse them with. */
+interface TextureReport {
+  textures: { path: string; width: number; height: number; format: string }[];
+  refused?: Record<string, unknown>;
+}
+
+/**
+ * Reads each texture's header (nothing is decoded) and checks the set
+ * against the default caps, as a render would.
+ */
+async function textureReport(rt: ModelRuntime): Promise<TextureReport> {
+  const out: TextureReport = { textures: [] };
+  const files: { path: string; bytes: Uint8Array }[] = [];
+  try {
+    for (const t of rt.settings.textures)
+      files.push({ path: t, bytes: await rt.source.read(rt.resolve(t)) });
+    for (const [i, h] of checkTextures(files).entries())
+      out.textures.push({
+        path: files[i]!.path,
+        width: h.width,
+        height: h.height,
+        format: h.format,
+      });
+  } catch (e) {
+    out.refused = errorFields(e);
+    for (const f of files) {
+      try {
+        const h = readTextureHeader(f.path, f.bytes);
+        if (!out.textures.some((t) => t.path === f.path))
+          out.textures.push({ path: f.path, width: h.width, height: h.height, format: h.format });
+      } catch {
+        // its error is the refusal, or comes after it
+      }
+    }
+  }
+  return out;
 }
 
 export interface ParameterValue {
@@ -201,7 +266,17 @@ export class AgentSession {
       );
     const location = await openModelLocation(this.roots, path);
     const runtime = await this.open(location, options);
-    this.loaded = { runtime, location, options, generation: ++this.generation, time: 0 };
+    const textures = await textureReport(runtime);
+    const sounds = await soundReport(runtime);
+    this.loaded = {
+      runtime,
+      location,
+      options,
+      generation: ++this.generation,
+      time: 0,
+      textures,
+      sounds,
+    };
     return this.summary();
   }
 
@@ -242,8 +317,21 @@ export class AgentSession {
       motionGroups: rt.motionGroups,
       physics: rt.animator.physics !== null,
       time,
-      warnings: rt.warnings,
+      textures: this.model.textures.textures,
+      ...(this.model.textures.refused ? { texturesRefused: this.model.textures.refused } : {}),
+      warnings: this.warnings(),
     };
+  }
+
+  /** The runtime's warnings, and a render's refusal of the textures. */
+  private warnings(): string[] {
+    const { runtime, textures, sounds } = this.model;
+    const r = textures.refused;
+    return [
+      ...runtime.warnings,
+      ...sounds,
+      ...(r ? [`textures: a render would fail: ${String(r.name)}: ${String(r.message)}`] : []),
+    ];
   }
 
   /** Everything an agent needs to drive the model. */
@@ -329,7 +417,9 @@ export class AgentSession {
         EFFECTS.filter((e) => rt.effectAvailable(e)).map((e) => [e, rt.effect(e)]),
       ),
       playing: { motions: rt.playingMotions, expressions: expressionsPlaying(rt) },
-      warnings: rt.warnings,
+      textures: this.model.textures.textures,
+      ...(this.model.textures.refused ? { texturesRefused: this.model.textures.refused } : {}),
+      warnings: this.warnings(),
     };
   }
 

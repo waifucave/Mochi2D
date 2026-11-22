@@ -11,6 +11,7 @@
  * - notes about the loaded model, for the model settings view;
  * - the hit-area overlay (3t).
  */
+import { skippedSoundReason, skippedSoundWarning } from "../anim/sound-format.js";
 import type { FileSource } from "../core/io/file-source.js";
 import type { EffectName } from "../runtime/model-runtime.js";
 import { parseMotion } from "../anim/motion.js";
@@ -227,8 +228,18 @@ export class AnimationUi {
         ...(options.fadeIn !== undefined ? { fadeIn: options.fadeIn } : {}),
         ...(options.fadeOut !== undefined ? { fadeOut: options.fadeOut } : {}),
       });
-      if (accepted && options.sound)
-        this.opts.playSound(options.sound, await src.read(options.sound));
+      if (accepted && options.sound) {
+        // A model's motion sounds play only as WAV files; one that won't is named, never dropped.
+        const bytes = await src.read(options.sound);
+        const skipped = skippedSoundReason(bytes);
+        if (skipped) {
+          const w = skippedSoundWarning(options.sound, skipped);
+          if (!m.warnings.includes(w)) m.warnings.push(w);
+          this.opts.setStatus(w, true);
+          return;
+        }
+        this.opts.playSound(options.sound, bytes);
+      }
       this.opts.setStatus(
         accepted
           ? `Motion ${short(path)}: ${motion.duration.toFixed(2)} s, fades ${motion.fadeIn}/${motion.fadeOut} s` +

@@ -55,6 +55,20 @@ reads what the application, or the person using a tool, gives it.
   its records declare is stopped there. An app that opens models from
   strangers should set smaller caps. A way around the caps, or memory
   out of proportion to them, counts as a vulnerability.
+- **Textures are capped by what they declare:** every texture's PNG header
+  is read before it is decoded, and by default a texture may declare
+  16,384 on a side and 268 million pixels, a model 1,074 million pixels
+  in all (`docs/api.md`, "Caps on what textures may declare"). Browsers
+  allocate the declared size before decoding, so these caps, not the
+  texture budget, bound what decoding takes. PNG, JPEG, WebP, GIF, BMP and
+  ICO sizes are read from their headers; other image formats are refused.
+- **Files from folders, URLs and drops are capped:** 1 GiB a file and
+  2 GiB in all by default; downloads are streamed and stopped at the cap.
+- **A model's motion sounds** play only as WAV files unless an app allows
+  compressed ones, and every skipped sound is named in the warnings.
+- **The tools fail on a refusal:** the command line exits non-zero with the
+  error's name and fields, and writes no picture; the MCP server returns an
+  error result.
 - **What counts as a vulnerability:** an input that breaks these
   guarantees, or that makes Mochi2D read or write outside what it was
   given.

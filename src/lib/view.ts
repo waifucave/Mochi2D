@@ -10,6 +10,13 @@
  * ```
  */
 import type { ArchiveLimits } from "../runtime/zip-source.js";
+import type { FileLimits } from "../core/io/file-limits.js";
+import type { TextureLimits } from "../core/image/texture-limits.js";
+import {
+  skippedSoundReason,
+  skippedSoundWarning,
+  type SoundOptions,
+} from "../anim/sound-format.js";
 import { mocInputBytes, sourceWithMoc, type MocInput } from "../runtime/moc-input.js";
 import type { ModelRuntime, MotionEnd, RuntimeOptions } from "../runtime/model-runtime.js";
 import { Emitter } from "./events.js";
@@ -148,6 +155,25 @@ export interface LoadOptions {
    * `{ maxEntryBytes, maxTotalBytes, maxEntries }`.
    */
   archive?: ArchiveLimits;
+  /**
+   * Caps on the files read from a folder, a drop or a URL, a zip included
+   * (default `DEFAULT_FILE_LIMITS`): `{ maxFileBytes, maxTotalBytes }`. A
+   * download is streamed and stopped at the cap.
+   */
+  files?: FileLimits;
+  /**
+   * Caps on what the model's textures may declare (default
+   * `DEFAULT_TEXTURE_LIMITS`): `{ maxSide, maxPixels, maxTotalPixels }`,
+   * checked from their headers before anything is decoded.
+   */
+  textures?: TextureLimits;
+  /**
+   * How the model's motion sounds play: by default only WAV files;
+   * `{ compressed: true }` lets the browser decode MP3, Ogg, FLAC and other
+   * compressed sounds, for models you trust. Sounds that won't play are named
+   * in the model's `warnings`.
+   */
+  sounds?: SoundOptions;
   /** Keep the current model's view (zoom, pan, rotation) for the new one. Default false. */
   keepView?: boolean;
   /**
@@ -324,14 +350,17 @@ export class MochiView implements ModelHost, ItemHost {
   async load(input: ModelInput, options: LoadOptions = {}): Promise<MochiModel> {
     if (this.disposed) throw new Error("the view is disposed");
     const token = ++this.loadToken;
-    const opened = await openModelInput(input, options.settings, options.archive);
+    const opened = await openModelInput(input, options.settings, options.archive, options.files);
     const source =
       options.moc === undefined
         ? opened.source
         : await sourceWithMoc(opened.source, opened.settingsPath, mocInputBytes(options.moc));
     const profile = deviceProfile();
+    let loaded: LiveModel | null = null;
     const live = await loadLiveModel(this.stage.gl, source, opened.settingsPath, {
       textureBudget: resolveTextureBudget(this.options.textureBudget ?? "auto", profile).bytes,
+      ...(options.textures ? { textures: options.textures } : {}),
+      ...(options.sounds ? { sounds: options.sounds } : {}),
       ...(profile.constrained ? { decodeWorkers: 1 } : {}),
       masks: MASK_SETTINGS[this.options.masks ?? "atlas"],
       ...(this.options.maskMeshes ? { maskMeshes: this.options.maskMeshes } : {}),
@@ -339,9 +368,11 @@ export class MochiView implements ModelHost, ItemHost {
       memory: this.stage.memory,
       runtime: {
         ...this.runtimeOptions(),
-        onSound: (_path, bytes) => this.playMotionSound(bytes),
+        onSound: (path, bytes) =>
+          this.playMotionSound(bytes, path, options.sounds, () => loaded?.runtime.warnings),
       },
     });
+    loaded = live;
     if (token !== this.loadToken || this.disposed) {
       // A later load (or dispose) won.
       live.dispose();
@@ -415,14 +446,33 @@ export class MochiView implements ModelHost, ItemHost {
    * 0 while it decodes, then the playback position; null (count the frames)
    * when it cannot be played.
    */
-  private playMotionSound(bytes: Uint8Array): () => number | null {
+  private playMotionSound(
+    bytes: Uint8Array,
+    path: string,
+    sounds: SoundOptions | undefined,
+    warnings: () => string[] | undefined,
+  ): () => number | null {
+    // A sound that won't play is named in the model's warnings, never dropped silently.
+    const skip = (reason: string) => {
+      const w = skippedSoundWarning(path, reason);
+      const list = warnings();
+      if (list && !list.includes(w)) list.push(w);
+    };
+    const reason = skippedSoundReason(bytes, sounds);
+    if (reason) {
+      skip(reason);
+      return () => null;
+    }
     let playback: SpeechPlayback | null = null;
     let failed = false;
     void (async () => {
       try {
-        const p = await this.speech.prepare(bytes);
+        const p = await this.speech.prepare(bytes, { wavOnly: !sounds?.compressed });
         if (p.buffer) playback = this.speech.play(p.buffer);
-        else failed = true;
+        else {
+          failed = true;
+          skip("the browser could not decode it");
+        }
       } catch (error) {
         failed = true;
         this.events.emit("error", { error });
@@ -443,6 +493,7 @@ export class MochiView implements ModelHost, ItemHost {
           reuse: old.runtime,
           textureBudget: resolveTextureBudget(this.options.textureBudget ?? "auto", deviceProfile())
             .bytes,
+          ...(old.textureLimits ? { textures: old.textureLimits } : {}),
           masks: old.masks,
           ...(this.options.maskMeshes ? { maskMeshes: this.options.maskMeshes } : {}),
           fit: old.fit,
@@ -488,10 +539,13 @@ export class MochiView implements ModelHost, ItemHost {
     if (!this.current) throw new Error("load a model before adding items");
     if (options.id !== undefined && this.itemList.some((i) => i.id === options.id))
       throw new Error(`the view already has an item with id "${options.id}"`);
-    const opened = await openModelInput(input, options.settings, options.archive);
+    const opened = await openModelInput(input, options.settings, options.archive, options.files);
     const profile = deviceProfile();
     const live = await loadLiveModel(this.stage.gl, opened.source, opened.settingsPath, {
       textureBudget: resolveTextureBudget(this.options.textureBudget ?? "auto", profile).bytes,
+      ...(options.textures ? { textures: options.textures } : {}),
+      // Items play no motion sounds of their own; an app's onSound gets them.
+      sounds: { ...options.sounds, played: this.options.runtime?.onSound !== undefined },
       ...(profile.constrained ? { decodeWorkers: 1 } : {}),
       masks: MASK_SETTINGS[this.options.masks ?? "atlas"],
       ...(this.options.maskMeshes ? { maskMeshes: this.options.maskMeshes } : {}),
@@ -627,6 +681,7 @@ export class MochiView implements ModelHost, ItemHost {
               this.options.textureBudget ?? "auto",
               deviceProfile(),
             ).bytes,
+            ...(old.textureLimits ? { textures: old.textureLimits } : {}),
             masks: old.masks,
             memory: this.stage.memory,
           },

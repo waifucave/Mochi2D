@@ -81,9 +81,13 @@
         renderer: app.renderer,
         ticker: app.ticker,
       }).catch((e) => {
+        // A missing model gets the hint; a refused or damaged one, its error's name and message.
+        const missing = e.name === "FileNotFoundError" || /\b404\b|not found/i.test(e.message);
         log(
-          `Could not load ${url}: ${e.message}. Put DeepSeek-chan in assets/models/DeepSeek/ ` +
-            "(see the README), or open this page with ?model=<URL of a model>.",
+          missing
+            ? `Could not load ${url}: ${e.message}. Put DeepSeek-chan in assets/models/DeepSeek/ ` +
+                "(see the README), or open this page with ?model=<URL of a model>."
+            : `Could not load ${url}: ${e.name}: ${e.message}`,
         );
         throw e;
       });

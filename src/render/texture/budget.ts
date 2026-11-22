@@ -5,7 +5,7 @@
  */
 import { rgba8Bytes } from "../gl/gpu-memory.js";
 
-export interface TextureLimits {
+export interface TextureFit {
   /** Largest allowed width/height (use `gl.MAX_TEXTURE_SIZE`). */
   maxSize: number;
   /** Optional cap on width × height (pixels) for one texture. */
@@ -20,7 +20,7 @@ export interface PlannedSize {
 }
 
 /** Size one texture must be scaled to so it fits `limits`. */
-export function fitTextureSize(width: number, height: number, limits: TextureLimits): PlannedSize {
+export function fitTextureSize(width: number, height: number, limits: TextureFit): PlannedSize {
   let scale = Math.min(1, limits.maxSize / width, limits.maxSize / height);
   if (limits.maxPixels !== undefined && width * height * scale * scale > limits.maxPixels) {
     scale = Math.min(scale, Math.sqrt(limits.maxPixels / (width * height)));
@@ -33,7 +33,7 @@ export function fitTextureSize(width: number, height: number, limits: TextureLim
   };
 }
 
-export interface BudgetOptions extends TextureLimits {
+export interface BudgetOptions extends TextureFit {
   /** Total nominal GPU bytes allowed for the whole set. Unlimited if omitted. */
   budgetBytes?: number;
   /** Count mip chains (≈ 4/3 of the base level). Default false. */

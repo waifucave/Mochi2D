@@ -66,7 +66,7 @@ detail is lost.
 
 ### Loading
 
-`view.load(input, { settings?, keepView?, moc?, archive? })` loads a model and shows it in
+`view.load(input, { settings?, keepView?, moc?, archive?, textures?, files?, sounds? })` loads a model and shows it in
 place of the current one (which is disposed). It resolves with a
 `MochiModel`. With `keepView: true`, the new model is shown with the zoom,
 offset and rotation of the one before (by default the view starts fitted).
@@ -148,6 +148,130 @@ set its own, smaller caps:
 ```ts
 await view.load(file, {
   archive: { maxEntryBytes: 64 * 2 ** 20, maxTotalBytes: 256 * 2 ** 20, maxEntries: 2000 },
+});
+```
+
+**Caps on what textures may declare.** A PNG of a few kilobytes can declare
+30,000 × 30,000 pixels, 3.6 GB once decoded. Browsers decode a texture at
+the size its header declares, and allocate that before the data proves it,
+even when it is then scaled down to the texture budget or `maxTextureSize`.
+So every texture's header is read before anything is decoded, and checked
+against three caps, `TextureLimits`: `textures` in `view.load`,
+`view.addItem`, `MochiSprite.from` and `NodeRenderer.render`.
+
+| Cap | Default (`DEFAULT_TEXTURE_LIMITS`) | Refuses |
+| --- | --- | --- |
+| `maxSide` | 16,384 | a texture wider or taller than this |
+| `maxPixels` | 268 million (16,384²; 1 GiB as RGBA) | a texture of more pixels than this |
+| `maxTotalPixels` | 1,074 million (2³⁰; 4 GiB as RGBA) | a model whose textures declare more pixels than this together |
+
+- **The error:** `TextureLimitError`, with `path` (the texture as the
+  settings name it), `kind` (`"side"`, `"pixels"` or `"total"`), `limit`,
+  `size` (the larger side, the pixels, or the model's running total) and
+  the declared `width` and `height`. Nothing was decoded.
+- **The formats:** PNG, JPEG, WebP, GIF, BMP and ICO, the formats browsers
+  decode as textures. Each declares its size in a header read without
+  decoding:
+
+  | Format | The size read from | Too little data refused |
+  | --- | --- | --- |
+  | PNG | the IHDR chunk | yes: the image data inflates at most about 1,032:1 |
+  | JPEG | the first frame header | sequential (baseline) only: two bits per 8 × 8 block; progressive and arithmetic coding can code a block in less |
+  | WebP | the VP8X canvas, and each VP8 or VP8L frame header | no: lossless codes can spend no bits on a pixel |
+  | GIF | the logical screen and the first frame's extent | no: a frame can cover a small part of the screen |
+  | BMP | the bitmap header | uncompressed only: every pixel; run-length coding can skip pixels |
+  | ICO | each entry's own image header (the largest) | the PNG entries' |
+
+  A GIF or ICO decodes to at most its declared size (a smaller frame or
+  entry); the others to exactly that size.
+- **Damaged or crafted:** `TextureFormatError`, with `path`, for
+  - another format, whose declared size Mochi2D does not read (AVIF and
+    HEIF, TIFF, JPEG XL, SVG), naming it;
+  - a header that can't be read, or that its format doesn't allow;
+  - a file too short to hold the size it declares (the table), before
+    decoding;
+  - data that fails to decode, or decodes to another size than declared.
+- **What the caps bound:** decoding a texture takes at most its declared
+  size, which the caps limit. A header that declares more than its data
+  holds fails to decode, after the browser has allocated the declared size;
+  one that declares less is decoded at the declared size, and the rest of
+  its data is ignored.
+- **The texture budget and `maxTextureSize`** scale textures down after they
+  are decoded, so they bound GPU memory, not decoding. The caps bound
+  decoding.
+- **Turning a cap off:** pass `Infinity` (`RangeError` for anything but a
+  number ≥ 0).
+- **`readTextureHeader(path, bytes)`** reads what a texture declares
+  (`{ width, height, format }`) with the same checks, to show a model's
+  sizes before loading it.
+
+The defaults let through every model we have measured: the largest texture
+is 8,192², 67 million pixels, and the largest model's textures declare 268
+million together. The viewer, the command line and the MCP server use them.
+An app that loads models from strangers should set smaller caps:
+
+```ts
+await view.load(file, {
+  archive: { maxEntryBytes: 64 * 2 ** 20, maxTotalBytes: 256 * 2 ** 20, maxEntries: 2000 },
+  textures: { maxSide: 8192, maxPixels: 2 ** 26, maxTotalPixels: 2 ** 28 },
+});
+```
+
+**Caps on a file's own size.** A zip's entries have their caps; the files
+themselves, from a folder, a URL, a drop or a picked file (a zip
+included), have two more, `FileLimits`: `files` in `view.load`,
+`view.addItem`, `MochiSprite.from`, `loadModelFromDisk` and
+`NodeRenderer.render`; the last argument of `sourceFromFolder`,
+`sourceFromZipFile` (after `archive`), `sourceFromFileList` and
+`sourceFromDataTransfer` (after `archive`); the third of `new
+HttpFileSource(baseUrl, label, limits)` and `new BrowserFileSource`.
+
+| Cap | Default (`DEFAULT_FILE_LIMITS`) | Refuses |
+| --- | --- | --- |
+| `maxFileBytes` | 1 GiB | a file larger than this |
+| `maxTotalBytes` | 2 GiB | reading past this many bytes from one source, each file counted once |
+
+- **The error:** `FileLimitError`, with `path`, `kind` (`"file"` or
+  `"total"`), `limit` and `size`.
+- **Before reading:** a size known beforehand (a `File`, a file on disk, a
+  download's `Content-Length`) is checked before anything is read.
+- **Downloads** are streamed and cancelled the moment they pass the cap,
+  never read whole first.
+- **Optional files** (physics, motions, expressions…) past a cap are not
+  read, and the model loads without them, with a warning; the settings and
+  the `.moc3` past a cap fail the load.
+- **In-memory input** (`{ files }`, a `FileSource` of your own) is already
+  held, so these caps don't apply to it.
+
+**Other files.** Sounds, motions, physics and the `.moc3` are read in
+proportion to their own size, whatever they declare: a WAV's data length
+is read to the end of the file, a motion's or physics file's `Meta` counts
+are only compared with what the file holds, and a `.moc3`'s section counts
+are checked against the file's length before anything is read.
+
+**A model's motion sounds** play only when they are WAV files, by default:
+the browser decodes compressed formats (FLAC, Ogg, MP3) to many times their
+size, and nothing in their headers bounds what it decodes. `sounds:
+{ compressed: true }` in `view.load`, `view.addItem` and `MochiSprite.from`
+lets them play, for models you trust. Every sound that won't play is
+named in the model's `warnings`, with the reason:
+
+- at load, by its name (not `.wav`);
+- when it was to play, by its bytes (a `.wav` that isn't one) or because
+  the browser could not decode it;
+- for a view's items, which play no motion sounds of their own.
+
+`soundFormat(bytes)` tells the formats apart. `speak()` plays any format
+the browser decodes, since the app chooses that audio.
+
+The defaults let through every model we have measured. For an app that
+loads models from strangers:
+
+```ts
+await view.load(file, {
+  archive: { maxEntryBytes: 64 * 2 ** 20, maxTotalBytes: 256 * 2 ** 20, maxEntries: 2000 },
+  textures: { maxSide: 8192, maxPixels: 2 ** 26, maxTotalPixels: 2 ** 28 },
+  files: { maxFileBytes: 128 * 2 ** 20, maxTotalBytes: 512 * 2 ** 20 },
 });
 ```
 
@@ -1227,6 +1351,9 @@ the sprite, not yet in the scene. Options:
 | `ticker`          | `Ticker.shared`             | The ticker that advances the animation (`app.ticker`), or null to call `update(seconds)` yourself. |
 | `settings`        |                             | Which settings file, when the input holds several. |
 | `archive`         | `DEFAULT_ARCHIVE_LIMITS`    | Caps on what a zip input may inflate to ([Loading](#loading)). |
+| `textures`        | `DEFAULT_TEXTURE_LIMITS`    | Caps on what the model's textures may declare ([Loading](#loading)). |
+| `files`           | `DEFAULT_FILE_LIMITS`       | Caps on the files read from a folder, a URL or picked files ([Loading](#loading)). |
+| `sounds`          | WAV only                    | `{ compressed: true }` lets a trusted model's compressed motion sounds play ([Loading](#loading)). |
 | `context`         | `"shared"` (WebGL 2), else `"own"` | Where the model is drawn (above). |
 | `look`            | `"follow"`                  | The eyes and head follow the pointer over the canvas (`globalpointermove`), or `"off"`. |
 | `hitArea`         | `"meshes"`                  | What Pixi counts as the sprite for pointer events: the boxes of the visible art meshes, or `"canvas"` (the canvas rectangle, through the picture's bounds). |
@@ -1458,6 +1585,8 @@ throws only its own error class (fuzzed, see `docs/architecture.md`):
 | `parseModelSettings` | `SettingsFormatError` |
 | `parseMotion`, `parseExpression`, `parsePhysics`, `parsePose`, `parseDisplayInfo`, `parseUserData`, `parseMotionSync` | `AnimationFormatError` |
 | zip sources (`sourceFromZip`, `ZipFileSource`, a damaged entry when it is read) | `ZipFormatError`; RAR and 7z archives `UnsupportedArchiveError`; past a cap, `ArchiveLimitError` |
+| a model's textures (`view.load`, `view.addItem`, `MochiSprite.from`, `NodeRenderer.render`; `readTextureHeader`) | `TextureFormatError`; past a cap, `TextureLimitError` |
+| folder, URL and picked-file sources, a file past a cap | `FileLimitError` |
 | `decodeWav` | `WavFormatError` |
 | `decodeMotionSyncWav` (also refuses sample rates outside 1–768 kHz) | `MotionSyncAudioError` |
 | file sources, a path that is not there | `FileNotFoundError` |
@@ -1531,7 +1660,10 @@ note), `background` (straight RGBA, 0–1; default transparent),
 the scale; default the canvas fitted in), `alpha` (`"straight"`, the default,
 or `"premultiplied"`), `nonFiniteOpacity` (for a path or source: `"load"`
 draws a file whose keyform opacities are NaN or ±∞; a runtime is drawn with
-its own option) and `fast`. It resolves to `{ png, width, height,
+its own option), `files` (caps on the files read for a path, default
+`DEFAULT_FILE_LIMITS`), `textures` (caps on what the textures may declare, default
+`DEFAULT_TEXTURE_LIMITS`; past one it rejects with `TextureLimitError`) and
+`fast`. It resolves to `{ png, width, height,
 pixelsPerUnit, center, reference, renderer, notes }`. Renders run one at a
 time; concurrent calls wait their turn. A source's files are read once and
 kept while the renderer is open (`renderer.forget(source)` drops them).

@@ -94,21 +94,28 @@ is in.
 
 ### Input, gestures and textures
 
-| Export                       | Kind      | Entry points  | Stability |
-| ---------------------------- | --------- | ------------- | --------- |
-| `bindGestures`               | function  | mochi2d, pixi | stable    |
-| `CONSTRAINED_TEXTURE_BUDGET` | const     | mochi2d, pixi | stable    |
-| `DEFAULT_TEXTURE_BUDGET`     | const     | mochi2d, pixi | stable    |
-| `deviceProfile`              | function  | mochi2d, pixi | stable    |
-| `DeviceProfile`              | interface | mochi2d, pixi | stable    |
-| `DragMode`                   | type      | mochi2d, pixi | stable    |
-| `GestureHandlers`            | interface | mochi2d, pixi | stable    |
-| `GestureOptions`             | interface | mochi2d, pixi | stable    |
-| `GestureTracker`             | class     | mochi2d, pixi | stable    |
-| `PressInfo`                  | interface | mochi2d, pixi | stable    |
-| `ResolvedBudget`             | interface | mochi2d, pixi | stable    |
-| `resolveTextureBudget`       | function  | mochi2d, pixi | stable    |
-| `TextureBudgetSetting`       | type      | mochi2d, pixi | stable    |
+| Export                       | Kind      | Entry points                  | Stability |
+| ---------------------------- | --------- | ----------------------------- | --------- |
+| `bindGestures`               | function  | mochi2d, pixi                 | stable    |
+| `CONSTRAINED_TEXTURE_BUDGET` | const     | mochi2d, pixi                 | stable    |
+| `DEFAULT_TEXTURE_BUDGET`     | const     | mochi2d, pixi                 | stable    |
+| `DEFAULT_TEXTURE_LIMITS`     | const     | mochi2d, headless, node, pixi | stable    |
+| `deviceProfile`              | function  | mochi2d, pixi                 | stable    |
+| `DeviceProfile`              | interface | mochi2d, pixi                 | stable    |
+| `DragMode`                   | type      | mochi2d, pixi                 | stable    |
+| `GestureHandlers`            | interface | mochi2d, pixi                 | stable    |
+| `GestureOptions`             | interface | mochi2d, pixi                 | stable    |
+| `GestureTracker`             | class     | mochi2d, pixi                 | stable    |
+| `PressInfo`                  | interface | mochi2d, pixi                 | stable    |
+| `readTextureHeader`          | function  | mochi2d, headless, node, pixi | stable    |
+| `ResolvedBudget`             | interface | mochi2d, pixi                 | stable    |
+| `resolveTextureBudget`       | function  | mochi2d, pixi                 | stable    |
+| `TextureBudgetSetting`       | type      | mochi2d, pixi                 | stable    |
+| `TextureFormatError`         | class     | mochi2d, headless, node, pixi | stable    |
+| `TextureHeader`              | interface | mochi2d, headless, node, pixi | stable    |
+| `TextureLimitError`          | class     | mochi2d, headless, node, pixi | stable    |
+| `TextureLimitKind`           | type      | mochi2d, headless, node, pixi | stable    |
+| `TextureLimits`              | interface | mochi2d, headless, node, pixi | stable    |
 
 ### Live audio and lip sync
 
@@ -251,6 +258,9 @@ is in.
 | `PhysicsParticle`      | interface | mochi2d, headless, node, pixi | stable       |
 | `PhysicsSetting`       | interface | mochi2d, headless, node, pixi | stable       |
 | `PhysicsState`         | interface | mochi2d, headless, node, pixi | stable       |
+| `soundFormat`          | function  | mochi2d, headless, node, pixi | stable       |
+| `SoundFormat`          | type      | mochi2d, headless, node, pixi | stable       |
+| `SoundOptions`         | interface | mochi2d, headless, node, pixi | stable       |
 | `UserData`             | interface | headless, node                | stable       |
 | `vertexBounds`         | function  | headless, node                | stable       |
 | `writePhysics`         | function  | mochi2d, headless, node, pixi | stable       |
@@ -317,6 +327,10 @@ is in.
 | `BrowserFileSource`       | class     | mochi2d, pixi                 | stable    |
 | `classifyModelFile`       | function  | headless, node                | stable    |
 | `DEFAULT_ARCHIVE_LIMITS`  | const     | mochi2d, headless, node, pixi | stable    |
+| `DEFAULT_FILE_LIMITS`     | const     | mochi2d, headless, node, pixi | stable    |
+| `FileLimitError`          | class     | mochi2d, headless, node, pixi | stable    |
+| `FileLimitKind`           | type      | mochi2d, headless, node, pixi | stable    |
+| `FileLimits`              | interface | mochi2d, headless, node, pixi | stable    |
 | `FileNotFoundError`       | class     | mochi2d, headless, node, pixi | stable    |
 | `FileSource`              | interface | mochi2d, headless, node, pixi | stable    |
 | `HttpFileSource`          | class     | mochi2d, pixi                 | stable    |

@@ -261,7 +261,9 @@ describe.skipIf(!built)("the mochi2d CLI", () => {
         join(pkg, "dist", "tools", "mochi2d.js"),
       );
       expect(r.code).toBe(3);
-      expect(r.err).toMatch(/^mochi2d: Rendering needs the render harness .* "npm run build"/);
+      expect(r.err).toMatch(
+        /^mochi2d: RenderUnavailable: Rendering needs the render harness .* "npm run build"/,
+      );
       expect(existsSync(join(tmp, "never.png"))).toBe(false);
       // Commands other than render work there.
       expect(

@@ -5,11 +5,13 @@
  */
 import { MemoryFileSource, type FileSource } from "../core/io/file-source.js";
 import {
+  readFileCapped,
   sourceFromDataTransfer,
   sourceFromFileList,
   sourceFromUrl,
   sourceFromZip,
 } from "../platform/browser-sources.js";
+import type { FileLimits } from "../core/io/file-limits.js";
 import { resolveSettingsPath } from "../runtime/bundle.js";
 import { rejectUnsupportedArchive, type ArchiveLimits } from "../runtime/zip-source.js";
 
@@ -61,23 +63,25 @@ const isZipName = (name: string) => name.toLowerCase().endsWith(".zip");
  * Resolves a {@link ModelInput}. `settings` picks the settings file when the
  * input holds several (a path inside the source); otherwise the shallowest
  * `*.model3.json` is used. A zip is read with the caps `archive` (by default
- * `DEFAULT_ARCHIVE_LIMITS`).
+ * `DEFAULT_ARCHIVE_LIMITS`); files from a folder, a drop or a URL, a zip
+ * included, with the caps `files` (by default `DEFAULT_FILE_LIMITS`).
  */
 export async function openModelInput(
   input: ModelInput,
   settings?: string,
   archive?: ArchiveLimits,
+  files?: FileLimits,
 ): Promise<OpenedInput> {
   let source: FileSource;
   let entry: string | undefined;
   if (typeof input === "string" || input instanceof URL) {
-    const r = await sourceFromUrl(String(input), archive);
+    const r = await sourceFromUrl(String(input), archive, files);
     source = r.source;
     entry = r.entry;
     if (entry && !entry.toLowerCase().endsWith(".model3.json"))
       throw new Error(`${String(input)}: expected a URL of a *.model3.json file or a .zip archive`);
   } else if (typeof DataTransfer !== "undefined" && input instanceof DataTransfer) {
-    source = await sourceFromDataTransfer(input, archive);
+    source = await sourceFromDataTransfer(input, archive, files);
   } else if (typeof Blob !== "undefined" && input instanceof Blob) {
     const name = typeof File !== "undefined" && input instanceof File ? input.name : "model.zip";
     rejectUnsupportedArchive(name, new Uint8Array(await input.slice(0, 8).arrayBuffer()));
@@ -85,20 +89,20 @@ export async function openModelInput(
       throw new Error(
         `${name}: a single file must be a .zip archive (pass a folder's files or a URL instead)`,
       );
-    source = sourceFromZip(name, new Uint8Array(await input.arrayBuffer()), archive);
+    source = sourceFromZip(name, await readFileCapped(input, name, files), archive);
   } else if (
     (typeof FileList !== "undefined" && input instanceof FileList) ||
     Array.isArray(input)
   ) {
-    const files = Array.from(input as ArrayLike<File>);
-    if (files.length === 1) rejectUnsupportedArchive(files[0]!.name);
-    if (files.length === 1 && isZipName(files[0]!.name))
+    const list = Array.from(input as ArrayLike<File>);
+    if (list.length === 1) rejectUnsupportedArchive(list[0]!.name);
+    if (list.length === 1 && isZipName(list[0]!.name))
       source = sourceFromZip(
-        files[0]!.name,
-        new Uint8Array(await files[0]!.arrayBuffer()),
+        list[0]!.name,
+        await readFileCapped(list[0]!, list[0]!.name, files),
         archive,
       );
-    else source = sourceFromFileList(files);
+    else source = sourceFromFileList(list, files);
   } else if (isFileSource(input)) {
     source = input;
   } else if (typeof input === "object" && input !== null && "files" in input) {

@@ -14,6 +14,77 @@ internal and can change in any release.
 - [docs/migration.md](docs/migration.md) lists the renames, removals and
   changed behavior since 0.10.0.
 
+## 0.24.0
+
+Caps on what a model's textures declare and on its files' own sizes, a
+choice for compressed motion sounds, and refusals that fail the command
+line and the MCP server properly. Evaluation and the renders of existing
+files are unchanged.
+
+### What an app should set
+
+- **If your app opens models people hand it,** pass these beside the
+  archive caps of 0.23.0:
+  - `textures: { maxSide: 8192, maxPixels: 2 ** 26, maxTotalPixels: 2 ** 28 }`
+    and `files: { maxFileBytes: 128 * 2 ** 20, maxTotalBytes: 512 * 2 ** 20 }`,
+    to `view.load`, `view.addItem` or `MochiSprite.from`;
+  - `textures` and `files` to `NodeRenderer.render`, and `files` to
+    `loadModelFromDisk`.
+- **If it only opens your own models,** the defaults are enough. To play
+  their compressed motion sounds (MP3, Ogg, FLAC), pass
+  `sounds: { compressed: true }`.
+- **Catch** `TextureLimitError` and `FileLimitError` ("too large") and
+  `TextureFormatError` ("damaged or not an image we read") where you catch
+  `ArchiveLimitError`. Show `model.warnings`: it names every motion sound
+  that won't play.
+
+### Added
+
+- **`TextureLimits`** (`maxSide`, `maxPixels`, `maxTotalPixels`; defaults
+  in `DEFAULT_TEXTURE_LIMITS`: 16,384, 2²⁸ and 2³⁰), as `textures`. Every
+  texture's header is read before anything is decoded.
+- **`TextureLimitError`** (`path`, `kind`, `limit`, `size`, `width`,
+  `height`) and **`TextureFormatError`** (`path`).
+- **`readTextureHeader(path, bytes)`** and `TextureHeader`: what a PNG,
+  JPEG, WebP, GIF, BMP or ICO file declares, without decoding it.
+- **`FileLimits`** (`maxFileBytes`, `maxTotalBytes`; defaults in
+  `DEFAULT_FILE_LIMITS`: 1 GiB and 2 GiB), as `files`, and
+  **`FileLimitError`** (`path`, `kind`, `limit`, `size`): the files of a
+  folder, a URL or a drop. A known size is checked before reading; a
+  download is streamed and stopped at the cap.
+- **`SoundOptions`** (`compressed`), as `sounds`; **`soundFormat(bytes)`**
+  and `SoundFormat`.
+
+All new exports are stable.
+
+### Changed
+
+- **Every texture's header is checked before decoding,** in the view, the
+  Pixi sprite, items, the Node renderer, the command line, the MCP server
+  and the texture probe. Browsers decode a texture at its declared size
+  even when it is then scaled down, so the texture budget never bounded
+  decoding; the caps now do.
+- **Texture formats:** PNG, JPEG, WebP, GIF, BMP and ICO load, their sizes
+  read from their headers. Formats whose size isn't read (AVIF or HEIF,
+  TIFF, JPEG XL) are refused with `TextureFormatError`
+  (`docs/migration.md`). A file too short for the size it declares is
+  refused where the format makes that a bound (PNG, sequential JPEG,
+  uncompressed BMP).
+- **A model's own motion sounds play only as WAV files** unless
+  `sounds: { compressed: true }`: the browser decodes compressed formats
+  to many times their size. Every skipped sound is named in the model's
+  `warnings`, at load and when it was to play; the viewer shows them, and
+  the command line's `describe` prints them. `speak()` still plays any
+  format the browser decodes.
+- **The command line and the MCP server fail on a refusal.** A texture,
+  archive or file cap, or a damaged file, exits non-zero with
+  `mochi2d: <name>: <message>` and, under `--json`, the error's fields; a
+  render writes no file. The MCP server returns `isError` with the name in
+  its text and the fields in `structuredContent.error`. `describe` and
+  `load_model` list each texture's declared size and the refusal a render
+  would meet.
+- **The fuzz tests** also run the texture header readers.
+
 ## 0.23.0
 
 Caps on what a zip archive may inflate to. Evaluation and renders are

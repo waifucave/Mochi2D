@@ -2,6 +2,7 @@
  * Headless rendering: serves dist/web, opens harness.html in Chromium, renders
  * scenarios offscreen and writes PNGs.
  */
+import { textureErrorFromMessage } from "../../src/core/image/texture-limits.js";
 import { mkdir, writeFile, access } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { startStaticServer, type RequestHandler } from "./static-server.js";
@@ -190,7 +191,13 @@ export async function openRenderSession(
         parameters: sc.parameters,
         partOpacities: sc.partOpacities,
       };
-      const r = await call<HarnessResult>("render", req);
+      let r: HarnessResult;
+      try {
+        r = await call<HarnessResult>("render", req);
+      } catch (e) {
+        // A texture the caps refuse: the typed error, never an empty image.
+        throw textureErrorFromMessage(e instanceof Error ? e.message : String(e)) ?? e;
+      }
       return {
         width: r.width,
         height: r.height,

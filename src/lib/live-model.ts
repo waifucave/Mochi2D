@@ -25,6 +25,7 @@ import {
   type FrameInsert,
 } from "../render/model/model-renderer.js";
 import type { TextureLoader, LoadedTexture } from "../render/texture/loader.js";
+import type { TextureLimits } from "../core/image/texture-limits.js";
 import type { TextureSource } from "../render/gl/texture.js";
 import type { GpuMemoryTracker } from "../render/gl/gpu-memory.js";
 import type { Animator, FrameResult } from "../anim/animator.js";
@@ -64,6 +65,8 @@ export interface LiveModelOptions {
    * (the reference renders' rule, 4f).
    */
   maskMeshes?: "active" | "all";
+  /** The texture caps the model was loaded with, kept to load its textures again. */
+  textureLimits?: TextureLimits;
 }
 
 /**
@@ -98,6 +101,8 @@ export class LiveModel implements StageModel {
   /** Text of the downscaled-textures notice, or null. */
   readonly textureNotice: string | null;
   fit: number;
+  /** The texture caps the model was loaded with (its textures load again with them). */
+  readonly textureLimits: TextureLimits | undefined;
   /** Milliseconds of the last animation frame, evaluation, and vertex hand-off. */
   lastAnimationMs = 0;
   lastEvaluationMs = 0;
@@ -126,6 +131,7 @@ export class LiveModel implements StageModel {
     this.runtime = runtime;
     this.name = runtime.settingsPath;
     this.fit = options.fit ?? DEFAULT_FIT;
+    this.textureLimits = options.textureLimits;
     this.parameters = runtime.parameters.map((p) => ({
       id: p.id,
       label: p.name + (p.blendShape ? " (blend shape)" : ""),

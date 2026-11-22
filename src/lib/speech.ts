@@ -74,8 +74,19 @@ export class SpeechPlayer {
     return this.ctx;
   }
 
-  /** Decodes a sound for playback and for lip sync. */
-  async prepare(bytes: Uint8Array): Promise<PreparedSound> {
+  /**
+   * Decodes a sound for playback and for lip sync. With `wavOnly` (a model's
+   * own motion sounds), anything but a WAV file is not decoded: the browser
+   * decodes compressed formats (FLAC, Ogg, MP3) to far more samples than
+   * their size, which a file from a stranger could use, while a WAV's
+   * samples are bounded by its size.
+   */
+  async prepare(bytes: Uint8Array, options: { wavOnly?: boolean } = {}): Promise<PreparedSound> {
+    const isWav =
+      bytes.length >= 12 &&
+      String.fromCharCode(bytes[0]!, bytes[1]!, bytes[2]!, bytes[3]!) === "RIFF" &&
+      String.fromCharCode(bytes[8]!, bytes[9]!, bytes[10]!, bytes[11]!) === "WAVE";
+    if (options.wavOnly && !isWav) return { buffer: null, sound: null, exact: false };
     let sound: WavSound | null = null;
     try {
       sound = decodeWav(bytes);

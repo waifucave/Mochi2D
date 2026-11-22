@@ -1,10 +1,20 @@
 /**
- * Loads a set of textures: reads PNG headers to plan sizes against the GPU
- * limit and a memory budget, decodes off the main thread directly at the
- * planned size, uploads, and records GPU memory.
+ * Loads a set of textures: reads PNG headers, checks them against the
+ * texture caps (texture-limits.ts) and plans sizes against the GPU limit and
+ * a memory budget, decodes off the main thread directly at the planned size,
+ * uploads, and records GPU memory.
+ *
+ * The browser decodes a texture at its declared size whatever size is asked
+ * for, so the caps, not the budget, bound what decoding takes.
  */
 import type { AlphaMode } from "../../core/image/alpha.js";
-import { readPngInfo } from "../../core/image/png-info.js";
+import {
+  checkTextures,
+  decodedSizeFits,
+  TextureFormatError,
+  type TextureHeader,
+  type TextureLimits,
+} from "../../core/image/texture-limits.js";
 import {
   createTexture2D,
   createTexture2DIncremental,
@@ -14,7 +24,7 @@ import {
   type TextureSource,
 } from "../gl/texture.js";
 import type { GpuMemoryTracker } from "../gl/gpu-memory.js";
-import { fitTextureSize, planTextureSizes, type PlannedSize } from "./budget.js";
+import { planTextureSizes, type PlannedSize } from "./budget.js";
 import { ImageDecoder } from "./decoder.js";
 import { TexturePreparer, mipLevels } from "./prepare.js";
 import { rgba8Bytes } from "../gl/gpu-memory.js";
@@ -37,6 +47,17 @@ export interface TextureFile {
   mime?: string;
 }
 
+/** The headers of a set of textures, checked against `limits` (texture-limits.ts). */
+export function checkTextureFiles(
+  files: readonly TextureFile[],
+  limits?: TextureLimits,
+): TextureHeader[] {
+  return checkTextures(
+    files.map((f) => ({ path: f.label, bytes: f.bytes })),
+    limits,
+  );
+}
+
 export interface LoadedTexture {
   label: string;
   texture: Texture2D;
@@ -50,6 +71,11 @@ export interface LoadedTexture {
 }
 
 export interface TextureLoaderOptions {
+  /**
+   * Caps on what the textures may declare (default `DEFAULT_TEXTURE_LIMITS`),
+   * checked from their headers before anything is decoded.
+   */
+  limits?: TextureLimits;
   /** Total nominal GPU bytes for one {@link TextureLoader.loadSet} call. Unlimited if omitted. */
   budgetBytes?: number;
   /** Override the size limit (never above the GPU's MAX_TEXTURE_SIZE). */
@@ -93,6 +119,8 @@ export interface TextureLoaderOptions {
 export interface PlannedTexture extends PlannedSize {
   originalWidth: number;
   originalHeight: number;
+  /** What the file's header declares. */
+  header: TextureHeader;
 }
 
 export class TextureLoader {
@@ -113,20 +141,24 @@ export class TextureLoader {
     });
   }
 
-  /** Plans sizes for the files whose headers can be read (others get `null`). */
-  plan(files: readonly TextureFile[]): (PlannedTexture | null)[] {
-    const infos = files.map((f) => readPngInfo(f.bytes));
-    const known = infos.filter((i): i is NonNullable<typeof i> => i !== null);
-    const planned = planTextureSizes(known, {
+  /**
+   * Plans sizes for the files. Throws `TextureFormatError` or
+   * `TextureLimitError` for a file the caps refuse (see {@link checkTextureFiles}).
+   */
+  plan(files: readonly TextureFile[]): PlannedTexture[] {
+    const headers = checkTextureFiles(files, this.options.limits);
+    const planned = planTextureSizes(headers, {
       maxSize: this.maxSize,
       ...(this.options.budgetBytes !== undefined ? { budgetBytes: this.options.budgetBytes } : {}),
       // Exact preparation builds the mip chain unless told otherwise.
       mipmaps: this.options.mipmaps ?? this.options.exact ?? false,
     });
-    let k = 0;
-    return infos.map((info) =>
-      info ? { ...planned[k++]!, originalWidth: info.width, originalHeight: info.height } : null,
-    );
+    return headers.map((h, i) => ({
+      ...planned[i]!,
+      originalWidth: h.width,
+      originalHeight: h.height,
+      header: h,
+    }));
   }
 
   /**
@@ -141,19 +173,26 @@ export class TextureLoader {
     const plans = this.plan(files);
     if (this.options.oversize === "fail") {
       plans.forEach((p, i) => {
-        if (p && p.scale < 1)
+        if (p.scale < 1)
           throw new TextureTooLargeError(
             `${files[i]!.label} is ${p.originalWidth}×${p.originalHeight}, larger than the maximum texture size ${this.maxSize}`,
           );
       });
     }
     const decodes = files.map((f, i) => {
-      const p = plans[i];
-      return this.decoder.decode(f.bytes, {
-        alpha,
-        ...(f.mime ? { mime: f.mime } : {}),
-        ...(p && p.scale < 1 ? { resize: { width: p.width, height: p.height } } : {}),
-      });
+      const p = plans[i]!;
+      return this.decoder
+        .decode(f.bytes, {
+          alpha,
+          ...(f.mime ? { mime: f.mime } : {}),
+          ...(p.scale < 1 ? { resize: { width: p.width, height: p.height } } : {}),
+        })
+        .catch((e: unknown) => {
+          throw new TextureFormatError(
+            f.label,
+            `the image could not be decoded (damaged or crafted): ${e instanceof Error ? e.message : String(e)}`,
+          );
+        });
     });
     // Avoid unhandled rejections for decodes we never await after an earlier failure.
     for (const d of decodes) d.catch(() => {});
@@ -161,32 +200,23 @@ export class TextureLoader {
     try {
       for (let i = 0; i < files.length; i++) {
         const f = files[i]!;
-        let decoded = await decodes[i]!;
-        const plan = plans[i];
-        let originalWidth = plan?.originalWidth ?? decoded.bitmap.width;
-        let originalHeight = plan?.originalHeight ?? decoded.bitmap.height;
-        let scale = plan?.scale ?? 1;
-        if (!plan) {
-          // Unknown header: fit to the size limit after decoding.
-          const fit = fitTextureSize(decoded.bitmap.width, decoded.bitmap.height, {
-            maxSize: this.maxSize,
-          });
-          if (fit.scale < 1 && this.options.oversize === "fail") {
-            decoded.bitmap.close();
-            throw new TextureTooLargeError(
-              `${f.label} is ${originalWidth}×${originalHeight}, larger than the maximum texture size ${this.maxSize}`,
-            );
-          }
-          if (fit.scale < 1) {
-            const resized = await createImageBitmap(decoded.bitmap, {
-              resizeWidth: fit.width,
-              resizeHeight: fit.height,
-              resizeQuality: "high",
-            });
-            decoded.bitmap.close();
-            decoded = { ...decoded, bitmap: resized };
-            scale = fit.scale;
-          }
+        const decoded = await decodes[i]!;
+        const plan = plans[i]!;
+        const { originalWidth, originalHeight, scale } = plan;
+        const { width: gotW, height: gotH } = decoded.bitmap;
+        // A resized decode is the planned size; a full one, what the header declares.
+        const fits =
+          plan.scale < 1
+            ? gotW === plan.width && gotH === plan.height
+            : decodedSizeFits(plan.header, gotW, gotH);
+        if (!fits) {
+          // The data decoded to another size than its header declares.
+          decoded.bitmap.close();
+          throw new TextureFormatError(
+            f.label,
+            `declares ${originalWidth}×${originalHeight} pixels but decoded to ` +
+              `${gotW}×${gotH} (damaged or crafted)`,
+          );
         }
         const t0 = performance.now();
         const texOpts = {

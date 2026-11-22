@@ -13,6 +13,7 @@
  *
  * It reads only the model (or file) it is given and writes only --out.
  */
+import { errorFields, errorLine } from "./lib/agent/errors.js";
 import { stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { parseArgs, repoRoot } from "./lib/cli.js";
@@ -294,8 +295,10 @@ main().then(
   (code) => (process.exitCode = code),
   (e: unknown) => {
     const usage = (e as { usage?: boolean }).usage === true;
-    const message = e instanceof Error ? e.message : String(e);
-    process.stderr.write(`mochi2d: ${message}\n`);
+    // The error's name and message, with its typed fields under --json.
+    process.stderr.write(`mochi2d: ${usage ? (e as Error).message : errorLine(e)}\n`);
+    if (!usage && process.argv.includes("--json"))
+      process.stdout.write(JSON.stringify({ error: errorFields(e) }, null, 2) + "\n");
     process.exitCode = e instanceof RenderUnavailableError ? 3 : usage ? 2 : 1;
   },
 );
