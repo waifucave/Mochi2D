@@ -14,6 +14,52 @@ internal and can change in any release.
 - [docs/migration.md](docs/migration.md) lists the renames, removals and
   changed behavior since 0.10.0.
 
+## 0.23.0
+
+Caps on what a zip archive may inflate to. Evaluation and renders are
+unchanged.
+
+### What an app should set
+
+- **If your app opens models people hand it** (uploads, drops, links),
+  pass caps that fit the models you expect, for example
+  `{ maxEntryBytes: 64 * 2 ** 20, maxTotalBytes: 256 * 2 ** 20, maxEntries: 2000 }`:
+  - as `archive` to `view.load`, `view.addItem` or `MochiSprite.from`;
+  - as the last argument of `sourceFromZip`, `new ZipFileSource`,
+    `sourceFromZipFile` or `sourceFromDataTransfer`;
+  - as `archive` to `loadModelFromDisk`.
+- **If it only opens your own models,** the defaults are enough.
+- **Catch `ArchiveLimitError`** where you catch `ZipFormatError`, to tell
+  the person the archive is too large.
+
+### Added
+
+- **`ArchiveLimits`:** `maxEntryBytes`, `maxTotalBytes` and `maxEntries`.
+  `DEFAULT_ARCHIVE_LIMITS` holds the defaults: 256 MiB, 1 GiB and 10,000.
+  Pass `Infinity` to turn a cap off.
+- **`ArchiveLimitError`,** with `path`, `kind` (`"entry"`, `"total"`,
+  `"entries"`), `limit` and `size`.
+- **`ZipFileSource.limits`,** the caps a source reads with, and
+  **`inflatedBytes`,** what it has inflated so far, each entry once.
+
+All four exports are stable.
+
+### Changed
+
+- **Zip entries inflate as a stream,** counting the real bytes. An entry
+  that inflates past the size its records declare stops there with
+  `ZipFormatError`. A read takes at most about twice the declared size,
+  itself capped, or about 40 MiB for a small entry.
+- **Every entry's CRC-32 is checked.** A wrong one is a `ZipFormatError`.
+- **The defaults apply everywhere,** the viewer, the command line, the
+  MCP server and the Node helpers included, and to the name decoding's own
+  reads of settings files.
+- **Reading deflated entries is slower,** the cost of stopping a crafted
+  one early: reading all of a 77 MiB model archive took 1.0 s where it
+  took 0.6 s before, on the test machine. The CRC-32 is computed about
+  twice as fast as before, which pays for part of the check.
+- **The fuzz tests** also run the zip reader with small caps.
+
 ## 0.22.1
 
 Tests and a comment only; no API or behavior change.

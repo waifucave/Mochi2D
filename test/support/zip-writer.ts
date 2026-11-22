@@ -17,6 +17,12 @@ export interface TestZipEntry {
   /** Extra field of the local header. */
   localExtra?: Uint8Array;
   deflate?: boolean;
+  /**
+   * Crafted entries: the entry's stored data as given (deflate data when
+   * `deflate` is set), and the size and CRC-32 the records declare, in place
+   * of those of `data`.
+   */
+  raw?: { stored: Uint8Array; size: number; crc: number };
 }
 
 const bytes = (x: Uint8Array | string) => (typeof x === "string" ? new TextEncoder().encode(x) : x);
@@ -83,8 +89,9 @@ export function buildZip(entries: TestZipEntry[], opts: { zip64?: boolean } = {}
   for (const e of entries) {
     const name = bytes(e.name);
     const raw = bytes(e.data);
-    const data = e.deflate ? deflateSync(raw) : raw;
-    const crc = crc32(raw);
+    const data = e.raw ? e.raw.stored : e.deflate ? deflateSync(raw) : raw;
+    const crc = e.raw ? e.raw.crc : crc32(raw);
+    const declared = e.raw ? e.raw.size : raw.length;
     const offset = out.length;
     const localExtra = e.localExtra ?? new Uint8Array(0);
     out.u32(0x04034b50);
@@ -95,13 +102,13 @@ export function buildZip(entries: TestZipEntry[], opts: { zip64?: boolean } = {}
     out.u16(0);
     out.u32(crc);
     out.u32(data.length);
-    out.u32(raw.length);
+    out.u32(declared);
     out.u16(name.length);
     out.u16(localExtra.length);
     out.bytes(name);
     out.bytes(localExtra);
     out.bytes(data);
-    central.push({ e, name, data, offset, crc, size: raw.length });
+    central.push({ e, name, data, offset, crc, size: declared });
   }
   const cdStart = out.length;
   for (const c of central) {

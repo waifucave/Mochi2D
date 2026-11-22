@@ -30,6 +30,7 @@
  * PixiJS is a peer dependency: this bundle imports `pixi.js` and does not
  * include it.
  */
+import type { ArchiveLimits } from "../runtime/zip-source.js";
 import {
   CanvasSource,
   Container,
@@ -75,6 +76,11 @@ export interface MochiSpriteOptions {
   ticker?: Ticker | null;
   /** Which settings file to load when the input holds several (path inside the input). */
   settings?: string;
+  /**
+   * Caps on what a zip input may inflate to (default `DEFAULT_ARCHIVE_LIMITS`):
+   * `{ maxEntryBytes, maxTotalBytes, maxEntries }`.
+   */
+  archive?: ArchiveLimits;
   /**
    * Where the model is drawn: "shared" draws on the Pixi renderer's WebGL
    * context into a Pixi texture; "own" draws in a WebGL context of the
@@ -307,7 +313,7 @@ export class MochiSprite extends Container implements ModelHost {
           preserveDrawingBuffer: true,
         });
     if (!gl) throw new Error("WebGL 2 is not available for the model");
-    const opened = await openModelInput(input, options.settings);
+    const opened = await openModelInput(input, options.settings, options.archive);
     const profile = deviceProfile();
     // The sprite exists before the runtime so that motion sounds play through it.
     let sprite: MochiSprite | null = null;

@@ -25,6 +25,17 @@ was added without breaking callers: see `CHANGELOG.md`.
 
 ## Behavior
 
+### 0.23.0
+
+- **Zip archives are capped** by default (`DEFAULT_ARCHIVE_LIMITS`): an
+  entry may inflate to 256 MiB, an archive to 1 GiB in all, and its
+  directory may list 10,000 entries. Past a cap, reading throws
+  `ArchiveLimitError`. To load a larger archive, pass `archive` (or a zip
+  source's `limits`) with a larger cap, or `Infinity`.
+- **Every entry's CRC-32 is checked.** An archive whose CRC-32 values are
+  wrong, which loaded before, now throws `ZipFormatError` for those
+  entries.
+
 ### 0.20.0
 
 - **Motion sync** no longer applies the motion-sync file's per-parameter

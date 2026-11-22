@@ -136,10 +136,17 @@ export { FileNotFoundError, MemoryFileSource } from "../core/io/file-source.js";
 export {
   ZipFileSource,
   ZipFormatError,
+  ArchiveLimitError,
+  DEFAULT_ARCHIVE_LIMITS,
   UnsupportedArchiveError,
   archiveKind,
 } from "../runtime/zip-source.js";
-export type { ArchiveKind, ZipNameEncoding } from "../runtime/zip-source.js";
+export type {
+  ArchiveKind,
+  ArchiveLimitKind,
+  ArchiveLimits,
+  ZipNameEncoding,
+} from "../runtime/zip-source.js";
 export type { FileSource } from "../core/io/file-source.js";
 export {
   BrowserFileSource,

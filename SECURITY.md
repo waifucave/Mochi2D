@@ -48,6 +48,13 @@ reads what the application, or the person using a tool, gives it.
 - **How it is checked:** the loaders are fuzzed: a short pass in the test
   suite, and `npm run fuzz` for long runs. A zip entry that claims more
   than deflate can produce is refused before it is unpacked.
+- **Zip archives are capped:** by default an entry may inflate to
+  256 MiB, an archive to 1 GiB in all, and a directory may list 10,000
+  entries (`docs/api.md`, "Caps on what an archive may inflate to"). The
+  real inflated bytes are counted, so an entry that inflates past what
+  its records declare is stopped there. An app that opens models from
+  strangers should set smaller caps. A way around the caps, or memory
+  out of proportion to them, counts as a vulnerability.
 - **What counts as a vulnerability:** an input that breaks these
   guarantees, or that makes Mochi2D read or write outside what it was
   given.

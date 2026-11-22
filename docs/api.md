@@ -66,7 +66,7 @@ detail is lost.
 
 ### Loading
 
-`view.load(input, { settings?, keepView?, moc? })` loads a model and shows it in
+`view.load(input, { settings?, keepView?, moc?, archive? })` loads a model and shows it in
 place of the current one (which is disposed). It resolves with a
 `MochiModel`. With `keepView: true`, the new model is shown with the zoom,
 offset and rotation of the one before (by default the view starts fitted).
@@ -104,6 +104,52 @@ decoded in this order:
 lacks the CP949 extension syllables, which only browsers decode. RAR and 7z
 archives are rejected with an `UnsupportedArchiveError`, which asks for the
 archive to be extracted first.
+
+**Caps on what an archive may inflate to.** A small zip can inflate to
+gigabytes. Every zip source reads within three caps, `ArchiveLimits`
+(`archive` in `view.load`, `view.addItem` and `MochiSprite.from`; the last
+argument of `sourceFromZip`, `new ZipFileSource`, `sourceFromZipFile` and
+`sourceFromDataTransfer`; `archive` in `loadModelFromDisk`):
+
+| Cap | Default (`DEFAULT_ARCHIVE_LIMITS`) | Refuses |
+| --- | --- | --- |
+| `maxEntryBytes` | 256 MiB | an entry larger than this |
+| `maxTotalBytes` | 1 GiB | reading past this many bytes from one archive, all entries together |
+| `maxEntries` | 10,000 | an archive whose directory lists more entries, when it is opened |
+
+- **The error:** `ArchiveLimitError`, with `path` (the entry, or the
+  archive's label for `"entries"`), `kind` (`"entry"`, `"total"` or
+  `"entries"`), `limit` (the cap) and `size` (what was asked for).
+- **What counts:** the bytes really inflated. An entry whose records
+  declare more than a cap is refused before anything is inflated. One that
+  inflates past its declared size stops there with `ZipFormatError`, so
+  the data kept is never larger than the declared size. While inflating,
+  a read briefly takes up to about as much again, or about 40 MiB for a
+  small entry.
+- **The total:** each entry counts once, the first time it is read, so a
+  view that reads a texture again does not use the cap up. An entry the
+  directory lists under several names counts once per name.
+- **Every read is capped,** the name decoding's own reads of settings
+  files too. Opening an archive reads only its directory and its settings
+  files.
+- **The CRC-32** of every entry is checked; a wrong one is a
+  `ZipFormatError`.
+- **Turning a cap off:** pass `Infinity`. A cap must be a number ≥ 0
+  (`RangeError` otherwise); one not given keeps its default.
+- **Nested archives:** a zip inside a zip is an entry like any other and
+  is never opened.
+
+The defaults let through any model we have seen many times over: the
+largest test model is 77 MiB in all, its largest file 17 MiB, and none
+has more than 44 files. The viewer, the command line, the MCP server and
+the Node helpers use them. An app that loads models from strangers should
+set its own, smaller caps:
+
+```ts
+await view.load(file, {
+  archive: { maxEntryBytes: 64 * 2 ** 20, maxTotalBytes: 256 * 2 ** 20, maxEntries: 2000 },
+});
+```
 
 ### Events
 
@@ -1180,6 +1226,7 @@ the sprite, not yet in the scene. Options:
 | `renderer`        | (required)                  | The Pixi renderer it is drawn with (`app.renderer`). |
 | `ticker`          | `Ticker.shared`             | The ticker that advances the animation (`app.ticker`), or null to call `update(seconds)` yourself. |
 | `settings`        |                             | Which settings file, when the input holds several. |
+| `archive`         | `DEFAULT_ARCHIVE_LIMITS`    | Caps on what a zip input may inflate to ([Loading](#loading)). |
 | `context`         | `"shared"` (WebGL 2), else `"own"` | Where the model is drawn (above). |
 | `look`            | `"follow"`                  | The eyes and head follow the pointer over the canvas (`globalpointermove`), or `"off"`. |
 | `hitArea`         | `"meshes"`                  | What Pixi counts as the sprite for pointer events: the boxes of the visible art meshes, or `"canvas"` (the canvas rectangle, through the picture's bounds). |
@@ -1238,8 +1285,8 @@ const vertices = model.instance.drawableVertices; // per drawable: x, y pairs in
 
 `ModelRuntime.load(source, settingsPath?, options?)` (the options below, and
 `moc`: [model data in place of a `.moc3`](#model-data-in-place-of-a-moc3))
-loads from any `FileSource`: `MemoryFileSource`, `sourceFromZip(label, bytes)`, or in Node
-`sourceFromFolder(dir)` and `sourceFromZipFile(path)` (named
+loads from any `FileSource`: `MemoryFileSource`, `sourceFromZip(label, bytes, limits?)`, or in Node
+`sourceFromFolder(dir)` and `sourceFromZipFile(path, limits?)` (named
 `folderSource` and `zipFileSource` before 0.16.0). It has the same parameter,
 part, motion, expression, look and effect methods as `MochiModel`
 (`physicsInputs`, `addExpression`, `onMotionEnd` included), plus:
@@ -1410,7 +1457,7 @@ throws only its own error class (fuzzed, see `docs/architecture.md`):
 | `writeMoc` | `MocWriteError` |
 | `parseModelSettings` | `SettingsFormatError` |
 | `parseMotion`, `parseExpression`, `parsePhysics`, `parsePose`, `parseDisplayInfo`, `parseUserData`, `parseMotionSync` | `AnimationFormatError` |
-| zip sources (`sourceFromZip`, `ZipFileSource`, a damaged entry when it is read) | `ZipFormatError`; RAR and 7z archives `UnsupportedArchiveError` |
+| zip sources (`sourceFromZip`, `ZipFileSource`, a damaged entry when it is read) | `ZipFormatError`; RAR and 7z archives `UnsupportedArchiveError`; past a cap, `ArchiveLimitError` |
 | `decodeWav` | `WavFormatError` |
 | `decodeMotionSyncWav` (also refuses sample rates outside 1–768 kHz) | `MotionSyncAudioError` |
 | file sources, a path that is not there | `FileNotFoundError` |

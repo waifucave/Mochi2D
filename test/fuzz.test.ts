@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { TARGETS, fuzz, mocSeeds, modelFiles, wavFile } from "../tools/lib/fuzz.js";
 import { zipSync } from "fflate";
 import { sourceFromZip } from "../src/runtime/zip-source.js";
-import { ZipFormatError } from "../src/runtime/zip-archive.js";
+import { ArchiveLimitError, ZipFormatError } from "../src/runtime/zip-archive.js";
 import { readMoc, writeMoc, MocWriteError } from "../src/core/moc/io.js";
 import { decodeWav, WavFormatError } from "../src/anim/lip-sync.js";
 import { decodeMotionSyncWav, MotionSyncAudioError } from "../src/anim/motion-sync/wav.js";
@@ -48,8 +48,13 @@ describe("what the long runs found", () => {
     // The central directory's uncompressed size (offset 24 of its record).
     const cd = zip.length - 22 - (46 + 5);
     dv.setUint32(cd + 24, 0xfffffff0, true);
-    const source = sourceFromZip("big.zip", zip);
-    await expect(source.read("a.txt")).rejects.toThrow(/more than deflate produces/);
+    // With no caps the ratio check refuses it; with the defaults, the caps do.
+    const uncapped = sourceFromZip("big.zip", zip, {
+      maxEntryBytes: Infinity,
+      maxTotalBytes: Infinity,
+    });
+    await expect(uncapped.read("a.txt")).rejects.toThrow(/more than deflate produces/);
+    await expect(sourceFromZip("big.zip", zip).read("a.txt")).rejects.toThrow(ArchiveLimitError);
   });
 
   it("moc3: a corrupt keyform count is checked quickly", () => {

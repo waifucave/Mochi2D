@@ -1,6 +1,11 @@
 /** Browser implementations of {@link FileSource}: picked folders, dropped files, zips and URLs. */
 import { FileNotFoundError, normalizePath, type FileSource } from "../core/io/file-source.js";
-import { archiveKind, rejectUnsupportedArchive, sourceFromZip } from "../runtime/zip-source.js";
+import {
+  archiveKind,
+  rejectUnsupportedArchive,
+  sourceFromZip,
+  type ArchiveLimits,
+} from "../runtime/zip-source.js";
 
 export { sourceFromZip };
 
@@ -38,8 +43,15 @@ function commonRoot(paths: string[]): string {
   return first;
 }
 
-/** Reads a dropped DataTransfer, walking directories recursively. */
-export async function sourceFromDataTransfer(dt: DataTransfer): Promise<FileSource> {
+/**
+ * Reads a dropped DataTransfer, walking directories recursively. A single
+ * dropped zip is read with the caps `archive` (by default
+ * `DEFAULT_ARCHIVE_LIMITS`).
+ */
+export async function sourceFromDataTransfer(
+  dt: DataTransfer,
+  archive?: ArchiveLimits,
+): Promise<FileSource> {
   const entries: [string, File][] = [];
   const roots = [...dt.items]
     .filter((it) => it.kind === "file")
@@ -55,7 +67,7 @@ export async function sourceFromDataTransfer(dt: DataTransfer): Promise<FileSour
     const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
     rejectUnsupportedArchive(file.name, head);
     if (archiveKind(file.name, head) === "zip")
-      return sourceFromZip(file.name, new Uint8Array(await file.arrayBuffer()));
+      return sourceFromZip(file.name, new Uint8Array(await file.arrayBuffer()), archive);
   }
   const label = commonRoot(entries.map(([p]) => p)) || "dropped files";
   return new BrowserFileSource(label, entries);
@@ -110,9 +122,13 @@ export class HttpFileSource implements FileSource {
 
 /**
  * Splits a URL to a settings file (or a zip) into a source plus the settings
- * path inside it.
+ * path inside it. A zip is read with the caps `archive` (by default
+ * `DEFAULT_ARCHIVE_LIMITS`).
  */
-export async function sourceFromUrl(url: string): Promise<{ source: FileSource; entry?: string }> {
+export async function sourceFromUrl(
+  url: string,
+  archive?: ArchiveLimits,
+): Promise<{ source: FileSource; entry?: string }> {
   const u = new URL(url, location.href);
   rejectUnsupportedArchive(decodeURIComponent(u.pathname.split("/").pop() ?? ""));
   if (u.pathname.toLowerCase().endsWith(".zip")) {
@@ -122,6 +138,7 @@ export async function sourceFromUrl(url: string): Promise<{ source: FileSource; 
       source: sourceFromZip(
         decodeURIComponent(u.pathname.split("/").pop()!),
         new Uint8Array(await res.arrayBuffer()),
+        archive,
       ),
     };
   }

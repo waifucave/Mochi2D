@@ -2,7 +2,7 @@
 import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
 import { FileNotFoundError, normalizePath, type FileSource } from "../core/io/file-source.js";
-import { sourceFromZip } from "../runtime/zip-source.js";
+import { sourceFromZip, type ArchiveLimits } from "../runtime/zip-source.js";
 
 /** A folder on disk. `list()` is populated by {@link NodeFileSource.open}. */
 export class NodeFileSource implements FileSource {
@@ -67,8 +67,18 @@ export function sourceFromFolder(dir: string): Promise<NodeFileSource> {
   return NodeFileSource.open(dir);
 }
 
-/** A zip archive on disk, unpacked into memory. */
-export async function sourceFromZipFile(path: string): Promise<FileSource> {
+/**
+ * A zip archive on disk, held in memory; entries inflate when read, within the
+ * caps `archive` (by default `DEFAULT_ARCHIVE_LIMITS`).
+ */
+export async function sourceFromZipFile(
+  path: string,
+  archive?: ArchiveLimits,
+): Promise<FileSource> {
   const buf = await readFile(path);
-  return sourceFromZip(basename(path), new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength));
+  return sourceFromZip(
+    basename(path),
+    new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength),
+    archive,
+  );
 }

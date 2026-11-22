@@ -9,6 +9,7 @@
  * view.on("hit", (e) => model.startMotion("TapBody"));
  * ```
  */
+import type { ArchiveLimits } from "../runtime/zip-source.js";
 import { mocInputBytes, sourceWithMoc, type MocInput } from "../runtime/moc-input.js";
 import type { ModelRuntime, MotionEnd, RuntimeOptions } from "../runtime/model-runtime.js";
 import { Emitter } from "./events.js";
@@ -142,6 +143,11 @@ export interface ItemLayout {
 export interface LoadOptions {
   /** Which settings file to load when the input holds several (path inside the input). */
   settings?: string;
+  /**
+   * Caps on what a zip input may inflate to (default `DEFAULT_ARCHIVE_LIMITS`):
+   * `{ maxEntryBytes, maxTotalBytes, maxEntries }`.
+   */
+  archive?: ArchiveLimits;
   /** Keep the current model's view (zoom, pan, rotation) for the new one. Default false. */
   keepView?: boolean;
   /**
@@ -318,7 +324,7 @@ export class MochiView implements ModelHost, ItemHost {
   async load(input: ModelInput, options: LoadOptions = {}): Promise<MochiModel> {
     if (this.disposed) throw new Error("the view is disposed");
     const token = ++this.loadToken;
-    const opened = await openModelInput(input, options.settings);
+    const opened = await openModelInput(input, options.settings, options.archive);
     const source =
       options.moc === undefined
         ? opened.source
@@ -482,7 +488,7 @@ export class MochiView implements ModelHost, ItemHost {
     if (!this.current) throw new Error("load a model before adding items");
     if (options.id !== undefined && this.itemList.some((i) => i.id === options.id))
       throw new Error(`the view already has an item with id "${options.id}"`);
-    const opened = await openModelInput(input, options.settings);
+    const opened = await openModelInput(input, options.settings, options.archive);
     const profile = deviceProfile();
     const live = await loadLiveModel(this.stage.gl, opened.source, opened.settingsPath, {
       textureBudget: resolveTextureBudget(this.options.textureBudget ?? "auto", profile).bytes,

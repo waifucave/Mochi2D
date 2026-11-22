@@ -12,17 +12,35 @@ import {
 import { classifyModelFile } from "../core/io/model-files.js";
 import { parseModelSettings, type ModelSettings } from "../core/settings/model-settings.js";
 import {
+  ArchiveLimitError,
+  DEFAULT_ARCHIVE_LIMITS,
+  declaredSize,
   localExtraField,
   looksLikeZip,
   readZipDirectory,
   zipEntryData,
   ZipFormatError,
+  type ArchiveLimitKind,
+  type ArchiveLimits,
   type ZipRecord,
 } from "./zip-archive.js";
 import { decodeZipNames, type ZipNameEncoding, type ZipNameSource } from "./zip-names.js";
 
-export { ZipFormatError };
-export type { ZipNameEncoding, ZipNameSource };
+export { ArchiveLimitError, DEFAULT_ARCHIVE_LIMITS, ZipFormatError };
+export type { ArchiveLimitKind, ArchiveLimits, ZipNameEncoding, ZipNameSource };
+
+/** The caps of a source: the given ones over {@link DEFAULT_ARCHIVE_LIMITS}, checked. */
+export function resolveArchiveLimits(limits: ArchiveLimits = {}): Required<ArchiveLimits> {
+  const out = { ...DEFAULT_ARCHIVE_LIMITS };
+  for (const key of ["maxEntryBytes", "maxTotalBytes", "maxEntries"] as const) {
+    const v = limits[key];
+    if (v === undefined) continue;
+    if (typeof v !== "number" || Number.isNaN(v) || v < 0)
+      throw new RangeError(`${key} must be a number ≥ 0 (Infinity for no cap)`);
+    out[key] = v;
+  }
+  return out;
+}
 
 /** Archive formats recognized by name or signature. */
 export type ArchiveKind = "zip" | "rar" | "7z";
@@ -90,20 +108,33 @@ function settingsReferences(s: ModelSettings): string[] {
  * are decoded as described in zip-names.ts; folders and macOS metadata
  * (`__MACOSX/`) are skipped. Lookups ignore the difference between composed
  * and decomposed Unicode forms (NFC and NFD).
+ *
+ * Every read, the name decoding's own reads of settings files included, is
+ * capped by the source's {@link ArchiveLimits} (by default
+ * {@link DEFAULT_ARCHIVE_LIMITS}) and checked against the entry's CRC-32:
+ * see {@link zipEntryData}. An entry counts toward `maxTotalBytes` once, the
+ * first time it is read in full.
  */
 export class ZipFileSource implements FileSource {
   /** The encoding chosen for names that carry no UTF-8 information. */
   readonly nameEncoding: ZipNameEncoding;
+  /** The caps this source reads with. */
+  readonly limits: Readonly<Required<ArchiveLimits>>;
   private readonly entries = new Map<string, { record: ZipRecord; name: string }>();
+  /** Entries already counted toward `maxTotalBytes`, and their total. */
+  private readonly counted = new Set<ZipRecord>();
+  private total = 0;
 
   constructor(
     readonly label: string,
     private readonly bytes: Uint8Array,
+    limits: ArchiveLimits = {},
   ) {
+    this.limits = Object.freeze(resolveArchiveLimits(limits));
     if (!looksLikeZip(bytes)) rejectUnsupportedArchive(label, bytes);
     let records: ZipRecord[];
     try {
-      records = readZipDirectory(bytes);
+      records = readZipDirectory(bytes, this.limits.maxEntries, label);
     } catch (e) {
       if (e instanceof ZipFormatError) throw new ZipFormatError(`${label}: ${e.message}`);
       throw e;
@@ -114,9 +145,7 @@ export class ZipFileSource implements FileSource {
       let refs = settings.get(i);
       if (!refs) {
         try {
-          refs = settingsReferences(
-            parseModelSettings(zipEntryData(bytes, records[i]!, "settings")),
-          );
+          refs = settingsReferences(parseModelSettings(this.readRecord(records[i]!, "settings")));
         } catch {
           refs = [];
         }
@@ -168,14 +197,40 @@ export class ZipFileSource implements FileSource {
       entry = undefined;
     }
     if (!entry) throw new FileNotFoundError(path, this.label);
-    return zipEntryData(this.bytes, entry.record, entry.name);
+    return this.readRecord(entry.record, entry.name);
+  }
+
+  /** Bytes inflated so far, each entry counted once (for `maxTotalBytes`). */
+  get inflatedBytes(): number {
+    return this.total;
+  }
+
+  /** An entry's data within the caps (module comment). */
+  private readRecord(record: ZipRecord, name: string): Uint8Array {
+    const first = !this.counted.has(record);
+    const { maxEntryBytes, maxTotalBytes } = this.limits;
+    if (first && this.total + declaredSize(record) > maxTotalBytes)
+      throw new ArchiveLimitError(name, "total", maxTotalBytes, this.total + declaredSize(record));
+    const data = zipEntryData(this.bytes, record, name, maxEntryBytes);
+    if (first) {
+      this.counted.add(record);
+      this.total += data.length;
+    }
+    return data;
   }
 }
 
 /**
- * Opens a zip archive held in memory. Throws {@link UnsupportedArchiveError}
- * for RAR and 7z archives, and {@link ZipFormatError} for other non-zip data.
+ * Opens a zip archive held in memory, with caps on what it may inflate to
+ * (by default {@link DEFAULT_ARCHIVE_LIMITS}). Throws
+ * {@link UnsupportedArchiveError} for RAR and 7z archives,
+ * {@link ZipFormatError} for other non-zip data, and
+ * {@link ArchiveLimitError} for a directory with more than `maxEntries`.
  */
-export function sourceFromZip(label: string, bytes: Uint8Array): ZipFileSource {
-  return new ZipFileSource(label, bytes);
+export function sourceFromZip(
+  label: string,
+  bytes: Uint8Array,
+  limits: ArchiveLimits = {},
+): ZipFileSource {
+  return new ZipFileSource(label, bytes, limits);
 }

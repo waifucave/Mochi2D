@@ -311,8 +311,12 @@ is in.
 | ------------------------- | --------- | ----------------------------- | --------- |
 | `archiveKind`             | function  | mochi2d, headless, node, pixi | stable    |
 | `ArchiveKind`             | type      | mochi2d, headless, node, pixi | stable    |
+| `ArchiveLimitError`       | class     | mochi2d, headless, node, pixi | stable    |
+| `ArchiveLimitKind`        | type      | mochi2d, headless, node, pixi | stable    |
+| `ArchiveLimits`           | interface | mochi2d, headless, node, pixi | stable    |
 | `BrowserFileSource`       | class     | mochi2d, pixi                 | stable    |
 | `classifyModelFile`       | function  | headless, node                | stable    |
+| `DEFAULT_ARCHIVE_LIMITS`  | const     | mochi2d, headless, node, pixi | stable    |
 | `FileNotFoundError`       | class     | mochi2d, headless, node, pixi | stable    |
 | `FileSource`              | interface | mochi2d, headless, node, pixi | stable    |
 | `HttpFileSource`          | class     | mochi2d, pixi                 | stable    |

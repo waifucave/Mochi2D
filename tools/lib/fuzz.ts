@@ -25,7 +25,12 @@ import { parseMotionSync } from "../../src/anim/motion-sync/file.js";
 import { decodeWav, WavFormatError } from "../../src/anim/lip-sync.js";
 import { decodeMotionSyncWav, MotionSyncAudioError } from "../../src/anim/motion-sync/wav.js";
 import { ZipFormatError } from "../../src/runtime/zip-archive.js";
-import { sourceFromZip, UnsupportedArchiveError } from "../../src/runtime/zip-source.js";
+import {
+  ArchiveLimitError,
+  sourceFromZip,
+  UnsupportedArchiveError,
+  type ArchiveLimits,
+} from "../../src/runtime/zip-source.js";
 import { FileNotFoundError, MemoryFileSource } from "../../src/core/io/file-source.js";
 import { ModelRuntime } from "../../src/runtime/model-runtime.js";
 import { Synth } from "../../test/support/synth.js";
@@ -533,6 +538,34 @@ function zipSeeds(): Uint8Array[] {
 
 // ---------------------------------------------------------------- targets
 
+/** A zip opened with `limits`, and each listed entry read (twice, as a viewer may). */
+function zipTarget(name: string, limits: ArchiveLimits): FuzzTarget {
+  return {
+    name,
+    allowed: [ZipFormatError, UnsupportedArchiveError, ArchiveLimitError],
+    seeds: zipSeeds,
+    mutate: byteMutation,
+    run: async (b) => {
+      const source = sourceFromZip("fuzz.zip", b, limits);
+      for (const path of [...source.list(), ...source.list()]) {
+        try {
+          await source.read(path);
+        } catch (e) {
+          // A listed entry whose data is broken or past a cap: the documented errors only.
+          if (
+            !(e instanceof ZipFormatError) &&
+            !(e instanceof FileNotFoundError) &&
+            !(e instanceof ArchiveLimitError)
+          )
+            throw e;
+        }
+        if (source.inflatedBytes > (limits.maxTotalBytes ?? Infinity))
+          throw new Error(`inflated ${source.inflatedBytes} bytes past the total cap`);
+      }
+    },
+  };
+}
+
 /** A loader and its seeds. `run` throws only documented errors on any input. */
 export interface FuzzTarget {
   name: string;
@@ -640,23 +673,9 @@ export const TARGETS: readonly FuzzTarget[] = [
   jsonTarget("display-info", DISPLAY_INFO, (b) => parseDisplayInfo(b)),
   jsonTarget("user-data", USER_DATA, (b) => parseUserData(b)),
   jsonTarget("motion-sync", MOTION_SYNC, (b) => parseMotionSync(b, "motion sync", { lint: true })),
-  {
-    name: "zip",
-    allowed: [ZipFormatError, UnsupportedArchiveError],
-    seeds: zipSeeds,
-    mutate: byteMutation,
-    run: async (b) => {
-      const source = sourceFromZip("fuzz.zip", b);
-      for (const path of source.list() ?? []) {
-        try {
-          await source.read(path);
-        } catch (e) {
-          // A listed entry whose data is broken: the documented errors only.
-          if (!(e instanceof ZipFormatError) && !(e instanceof FileNotFoundError)) throw e;
-        }
-      }
-    },
-  },
+  zipTarget("zip", {}),
+  // Caps small enough that the seeds' own entries meet them.
+  zipTarget("zip-capped", { maxEntryBytes: 400, maxTotalBytes: 700, maxEntries: 4 }),
   {
     name: "wav",
     allowed: [WavFormatError, MotionSyncAudioError],

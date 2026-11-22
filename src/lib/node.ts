@@ -15,7 +15,7 @@ import { stat } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 import { ModelRuntime, type RuntimeOptions } from "../runtime/model-runtime.js";
 import { sourceFromFolder, sourceFromZipFile } from "../platform/node-sources.js";
-import { rejectUnsupportedArchive } from "../runtime/zip-source.js";
+import { rejectUnsupportedArchive, type ArchiveLimits } from "../runtime/zip-source.js";
 import { resultModelFromSource, type ResultModel } from "../conformance/results.js";
 
 export * from "./headless.js";
@@ -31,17 +31,18 @@ export { encodePngRgba } from "../platform/node-png.js";
 
 /**
  * Loads a model from disk: a `*.model3.json` file (with its folder), a model
- * folder (its shallowest `*.model3.json`), or a `.zip` archive. RAR and 7z
- * archives are rejected with {@link UnsupportedArchiveError}.
+ * folder (its shallowest `*.model3.json`), or a `.zip` archive, read within
+ * the caps `archive` (default `DEFAULT_ARCHIVE_LIMITS`). RAR and 7z archives
+ * are rejected with {@link UnsupportedArchiveError}.
  */
 export async function loadModelFromDisk(
   path: string,
-  options: RuntimeOptions & { settings?: string } = {},
+  options: RuntimeOptions & { settings?: string; archive?: ArchiveLimits } = {},
 ): Promise<ModelRuntime> {
-  const { settings, ...runtime } = options;
+  const { settings, archive, ...runtime } = options;
   rejectUnsupportedArchive(basename(path));
   if (path.toLowerCase().endsWith(".zip"))
-    return ModelRuntime.load(await sourceFromZipFile(path), settings, runtime);
+    return ModelRuntime.load(await sourceFromZipFile(path, archive), settings, runtime);
   if ((await stat(path)).isDirectory())
     return ModelRuntime.load(await sourceFromFolder(path), settings, runtime);
   return ModelRuntime.load(
